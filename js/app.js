@@ -1,17 +1,18 @@
 /* =========================================================
    Atelier Noura
    File: js/app.js
+   Version: FINAL FIX
 ========================================================= */
 
 (function () {
-
     "use strict";
 
-    const CART_KEY =
-        "atelier_noura_cart";
+    /* =====================================================
+       CONFIG
+    ===================================================== */
 
-    const LAST_ORDER_KEY =
-        "atelier_noura_last_order";
+    const CART_KEY = "atelier_noura_cart";
+    const LAST_ORDER_KEY = "atelier_noura_last_order";
 
     let db = null;
 
@@ -19,21 +20,20 @@
     let categories = [];
     let deliveryZones = [];
 
+    /* =====================================================
+       HELPERS
+    ===================================================== */
+
     function $(selector, parent = document) {
         return parent.querySelector(selector);
     }
 
     function $$(selector, parent = document) {
-        return Array.from(
-            parent.querySelectorAll(selector)
-        );
+        return Array.from(parent.querySelectorAll(selector));
     }
 
     function escapeHTML(value) {
-
-        return String(
-            value ?? ""
-        )
+        return String(value ?? "")
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
@@ -42,40 +42,33 @@
     }
 
     function normalizeText(value) {
-
         return String(value || "")
             .trim()
             .replace(/\s+/g, " ");
     }
 
     function formatPrice(value) {
-
         return (
-            Number(value || 0)
-                .toLocaleString("fr-DZ") +
+            Number(value || 0).toLocaleString("fr-DZ") +
             " DA"
         );
     }
 
     function language() {
-
         return (
-            localStorage.getItem(
-                "atelier_noura_language"
-            ) ||
+            localStorage.getItem("atelier_noura_language") ||
+            localStorage.getItem("lang") ||
             document.documentElement.lang ||
             "ar"
         );
     }
 
     function localized(item, field) {
-
         if (!item) {
             return "";
         }
 
-        const lang =
-            language();
+        const lang = language();
 
         return (
             item[`${field}_${lang}`] ||
@@ -94,18 +87,26 @@
        SUPABASE
     ===================================================== */
 
-    function initializeDatabase() {
+    async function initializeDatabase() {
+        /*
+         * مهم جدًا:
+         * initSupabase() في js/supabase.js هي async.
+         * لذلك يجب استعمال await.
+         */
 
-        if (
-            typeof initSupabase !==
-            "function"
-        ) {
+        if (typeof initSupabase !== "function") {
             throw new Error(
                 "Supabase configuration file is missing."
             );
         }
 
-        db = initSupabase();
+        db = await initSupabase();
+
+        if (!db) {
+            throw new Error(
+                "Supabase client could not be initialized."
+            );
+        }
 
         return db;
     }
@@ -115,48 +116,68 @@
     ===================================================== */
 
     function getImageUrl(path) {
-
         if (!path) {
             return "";
         }
 
+        const cleanPath = String(path).trim();
+
         if (
-            path.startsWith("http://") ||
-            path.startsWith("https://") ||
-            path.startsWith("data:")
+            cleanPath.startsWith("http://") ||
+            cleanPath.startsWith("https://") ||
+            cleanPath.startsWith("data:")
         ) {
-            return path;
+            return cleanPath;
         }
 
         if (!db) {
             return "";
         }
 
-        return db.storage
+        const result = db.storage
             .from("product-media")
-            .getPublicUrl(path)
-            .data.publicUrl;
+            .getPublicUrl(cleanPath);
+
+        return result?.data?.publicUrl || "";
     }
 
     function productImage(product) {
-
-        if (
-            product.cover_image
-        ) {
-            return getImageUrl(
-                product.cover_image
-            );
+        if (!product) {
+            return "";
         }
 
-        const images =
-            product.product_images ||
-            [];
+        /*
+         * أولاً: cover_image إذا كان موجودًا.
+         */
+        if (product.cover_image) {
+            return getImageUrl(product.cover_image);
+        }
+
+        /*
+         * ثانيًا: product_images.
+         */
+        const images = Array.isArray(product.product_images)
+            ? product.product_images
+            : [];
+
+        if (!images.length) {
+            return "";
+        }
 
         const cover =
             images.find(
-                image => image.is_cover
+                image =>
+                    image &&
+                    (
+                        image.is_cover === true ||
+                        image.is_cover === "true"
+                    )
             ) ||
-            images[0];
+            [...images].sort(
+                (a, b) =>
+                    Number(a.sort_order || 0) -
+                    Number(b.sort_order || 0)
+            )[0];
 
         return getImageUrl(
             cover?.storage_path
@@ -168,151 +189,113 @@
     ===================================================== */
 
     function getCart() {
-
         try {
-
-            const raw =
-                localStorage.getItem(
-                    CART_KEY
-                );
+            const raw = localStorage.getItem(CART_KEY);
 
             if (!raw) {
                 return [];
             }
 
-            const data =
-                JSON.parse(raw);
+            const data = JSON.parse(raw);
 
             return Array.isArray(data)
                 ? data
                 : [];
 
         } catch {
-
             return [];
-
         }
     }
 
     function saveCart(cart) {
-
         localStorage.setItem(
             CART_KEY,
             JSON.stringify(cart)
         );
 
         updateCartCount();
-
         renderCart();
     }
 
     function clearCart() {
-
-        localStorage.removeItem(
-            CART_KEY
-        );
-
+        localStorage.removeItem(CART_KEY);
         updateCartCount();
+        renderCart();
     }
 
     function updateCartCount() {
-
-        const count =
-            getCart().reduce(
-                (sum, item) =>
-                    sum +
-                    Number(
-                        item.quantity || 0
-                    ),
-                0
-            );
+        const count = getCart().reduce(
+            (sum, item) =>
+                sum + Number(item.quantity || 0),
+            0
+        );
 
         $$("#cartCount, #cart-count, .cart-count")
             .forEach(element => {
-                element.textContent =
-                    String(count);
+                element.textContent = String(count);
             });
     }
 
-    function addToCart(
-        productId,
-        quantity = 1
-    ) {
-
-        const product =
-            products.find(
-                item =>
-                    String(item.id) ===
-                    String(productId)
-            );
+    function addToCart(productId, quantity = 1) {
+        const product = products.find(
+            item =>
+                String(item.id) ===
+                String(productId)
+        );
 
         if (!product) {
-
             showMessage(
                 "المنتج غير موجود."
             );
-
             return;
         }
 
-        const stock =
-            Number(product.stock || 0);
+        const stock = Number(
+            product.stock || 0
+        );
 
         if (stock <= 0) {
-
             showMessage(
                 "هذا المنتج غير متوفر حاليًا."
             );
-
             return;
         }
 
-        const cart =
-            getCart();
+        const cart = getCart();
 
-        const existing =
-            cart.find(
-                item =>
-                    String(item.product_id) ===
-                    String(product.id)
-            );
+        const existing = cart.find(
+            item =>
+                String(item.product_id) ===
+                String(product.id)
+        );
 
-        const requested =
-            Math.max(
-                1,
-                Number(quantity || 1)
-            );
+        const requested = Math.max(
+            1,
+            Number(quantity || 1)
+        );
 
         if (existing) {
-
             const next =
                 Number(existing.quantity) +
                 requested;
 
             if (next > stock) {
-
                 showMessage(
                     `المتوفر فقط ${stock} قطعة.`
                 );
-
                 return;
             }
 
-            existing.quantity =
-                next;
+            existing.quantity = next;
 
         } else {
-
             cart.push({
-                product_id:
-                    product.id,
-                quantity:
-                    Math.min(
-                        requested,
-                        stock
-                    )
+                product_id: product.id,
+                quantity: Math.min(
+                    requested,
+                    stock
+                )
             });
-
         }
 
         saveCart(cart);
@@ -323,13 +306,11 @@
     }
 
     function removeCartItem(productId) {
-
-        const cart =
-            getCart().filter(
-                item =>
-                    String(item.product_id) !==
-                    String(productId)
-            );
+        const cart = getCart().filter(
+            item =>
+                String(item.product_id) !==
+                String(productId)
+        );
 
         saveCart(cart);
     }
@@ -338,40 +319,34 @@
         productId,
         quantity
     ) {
+        const cart = getCart();
 
-        const cart =
-            getCart();
-
-        const item =
-            cart.find(
-                entry =>
-                    String(entry.product_id) ===
-                    String(productId)
-            );
+        const item = cart.find(
+            entry =>
+                String(entry.product_id) ===
+                String(productId)
+        );
 
         if (!item) {
             return;
         }
 
-        const product =
-            products.find(
-                entry =>
-                    String(entry.id) ===
-                    String(productId)
-            );
+        const product = products.find(
+            entry =>
+                String(entry.id) ===
+                String(productId)
+        );
 
-        const stock =
-            Number(product?.stock || 0);
+        const stock = Number(
+            product?.stock || 0
+        );
 
-        let next =
-            Number(quantity || 0);
+        let next = Number(
+            quantity || 0
+        );
 
         if (next <= 0) {
-
-            removeCartItem(
-                productId
-            );
-
+            removeCartItem(productId);
             return;
         }
 
@@ -379,7 +354,6 @@
             stock > 0 &&
             next > stock
         ) {
-
             next = stock;
 
             showMessage(
@@ -387,8 +361,7 @@
             );
         }
 
-        item.quantity =
-            next;
+        item.quantity = next;
 
         saveCart(cart);
     }
@@ -398,14 +371,22 @@
     ===================================================== */
 
     async function loadProducts() {
+        if (!db) {
+            throw new Error(
+                "Supabase is not initialized."
+            );
+        }
+
+        /*
+         * نستخدم الأعمدة الموجودة في قاعدة البيانات.
+         * product_images يتم تحميلها مع المنتج.
+         */
 
         const {
             data,
             error
         } = await db
-
             .from("products")
-
             .select(`
                 *,
                 categories (
@@ -424,12 +405,10 @@
                     is_cover
                 )
             `)
-
             .eq(
                 "is_active",
                 true
             )
-
             .order(
                 "created_at",
                 {
@@ -438,37 +417,71 @@
             );
 
         if (error) {
-
             console.error(
                 "Products error:",
                 error
             );
 
-            throw error;
+            /*
+             * محاولة ثانية أبسط.
+             * إذا كانت product_images لا تحتوي أحد الأعمدة
+             * الإضافية، لن نوقف المتجر كله.
+             */
+
+            const fallback =
+                await db
+                    .from("products")
+                    .select(`
+                        *,
+                        categories (
+                            id,
+                            slug,
+                            name_ar,
+                            name_fr,
+                            name_en
+                        )
+                    `)
+                    .eq(
+                        "is_active",
+                        true
+                    )
+                    .order(
+                        "created_at",
+                        {
+                            ascending: false
+                        }
+                    );
+
+            if (fallback.error) {
+                throw fallback.error;
+            }
+
+            products = fallback.data || [];
+
+            return products;
         }
 
-        products =
-            data || [];
+        products = data || [];
 
         return products;
     }
 
     async function loadCategories() {
+        if (!db) {
+            return [];
+        }
 
-        const {
-            data,
-            error
-        } = await db
+        /*
+         * محاولة القراءة بالشكل الكامل.
+         */
 
+        let result = await db
             .from("categories")
-
             .select("*")
-
             .eq(
                 "is_active",
                 true
             )
-
             .order(
                 "sort_order",
                 {
@@ -476,38 +489,50 @@
                 }
             );
 
-        if (error) {
+        /*
+         * إذا كانت قاعدة البيانات القديمة لا تحتوي
+         * sort_order أو is_active، نجرب قراءة أبسط.
+         */
 
+        if (result.error) {
+            result = await db
+                .from("categories")
+                .select("*")
+                .order(
+                    "created_at",
+                    {
+                        ascending: true
+                    }
+                );
+        }
+
+        if (result.error) {
             console.error(
                 "Categories error:",
-                error
+                result.error
             );
 
+            categories = [];
             return [];
         }
 
-        categories =
-            data || [];
+        categories = result.data || [];
 
         return categories;
     }
 
     async function loadDeliveryZones() {
+        if (!db) {
+            return [];
+        }
 
-        const {
-            data,
-            error
-        } = await db
-
+        let result = await db
             .from("delivery_zones")
-
             .select("*")
-
             .eq(
                 "is_active",
                 true
             )
-
             .order(
                 "wilaya_code",
                 {
@@ -515,18 +540,36 @@
                 }
             );
 
-        if (error) {
+        if (result.error) {
+            /*
+             * دعم schema القديم.
+             */
+            result = await db
+                .from("delivery_zones")
+                .select("*")
+                .eq(
+                    "is_active",
+                    true
+                )
+                .order(
+                    "wilaya",
+                    {
+                        ascending: true
+                    }
+                );
+        }
 
+        if (result.error) {
             console.error(
                 "Delivery error:",
-                error
+                result.error
             );
 
+            deliveryZones = [];
             return [];
         }
 
-        deliveryZones =
-            data || [];
+        deliveryZones = result.data || [];
 
         return deliveryZones;
     }
@@ -536,13 +579,12 @@
     ===================================================== */
 
     function productCard(product) {
-
         const name =
             localized(
                 product,
                 "name"
             ) ||
-            "Produit";
+            "Atelier Noura";
 
         const category =
             localized(
@@ -551,14 +593,13 @@
             );
 
         const image =
-            productImage(
-                product
-            );
+            productImage(product);
 
         const stock =
-            Number(
-                product.stock || 0
-            );
+            Number(product.stock || 0);
+
+        const featured =
+            product.is_featured === true;
 
         return `
             <article
@@ -569,6 +610,7 @@
                 <a
                     class="product-card-image"
                     href="product.html?id=${encodeURIComponent(product.id)}"
+                    aria-label="${escapeHTML(name)}"
                 >
 
                     ${
@@ -585,6 +627,16 @@
                                     Atelier Noura
                                 </div>
                             `
+                    }
+
+                    ${
+                        featured
+                            ? `
+                                <span class="product-badge">
+                                    مميز
+                                </span>
+                            `
+                            : ""
                     }
 
                 </a>
@@ -636,19 +688,17 @@
         list = products,
         target = null
     ) {
-
         target =
             target ||
             $(
-                "[data-products], #products-grid, .products-grid"
+                "[data-products], #products-grid, #productsGrid, .products-grid"
             );
 
         if (!target) {
             return;
         }
 
-        if (!list.length) {
-
+        if (!Array.isArray(list) || !list.length) {
             target.innerHTML = `
                 <div class="empty-state">
                     لا توجد منتجات متاحة حاليًا.
@@ -664,12 +714,27 @@
                 .join("");
     }
 
-    function renderFeatured() {
+    /* =====================================================
+       FEATURED PRODUCTS
+    ===================================================== */
 
-        const target =
-            $(
-                "[data-featured-products], #featured-products, .featured-products"
-            );
+    function renderFeatured() {
+        const targets = [
+            "[data-featured-products]",
+            "#featured-products",
+            "#featuredProducts",
+            ".featured-products"
+        ];
+
+        let target = null;
+
+        for (const selector of targets) {
+            target = $(selector);
+
+            if (target) {
+                break;
+            }
+        }
 
         if (!target) {
             return;
@@ -678,7 +743,7 @@
         const featured =
             products.filter(
                 product =>
-                    product.is_featured
+                    product.is_featured === true
             );
 
         renderProducts(
@@ -690,11 +755,65 @@
     }
 
     /* =====================================================
+       NEW ARRIVALS
+    ===================================================== */
+
+    function renderNewArrivals() {
+        const targets = [
+            "[data-new-arrivals]",
+            "#new-arrivals",
+            "#newArrivals",
+            "#new-arrivals-products",
+            "#newArrivalsProducts",
+            ".new-arrivals",
+            ".new-arrivals-products"
+        ];
+
+        let target = null;
+
+        for (const selector of targets) {
+            target = $(selector);
+
+            if (target) {
+                break;
+            }
+        }
+
+        if (!target) {
+            return;
+        }
+
+        /*
+         * loadProducts() يرتب المنتجات:
+         * created_at DESC
+         *
+         * لذلك أول المنتجات هي الأحدث.
+         */
+
+        const newest =
+            [...products]
+                .sort(
+                    (a, b) =>
+                        new Date(
+                            b.created_at || 0
+                        ) -
+                        new Date(
+                            a.created_at || 0
+                        )
+                )
+                .slice(0, 8);
+
+        renderProducts(
+            newest,
+            target
+        );
+    }
+
+    /* =====================================================
        PRODUCT DETAILS
     ===================================================== */
 
     async function renderProductDetails() {
-
         const target =
             $("#productDetail");
 
@@ -714,7 +833,6 @@
             params.get("slug");
 
         if (!id && !slug) {
-
             target.innerHTML = `
                 <div class="empty-state">
                     المنتج غير محدد.
@@ -733,17 +851,58 @@
             );
 
         if (!product && slug) {
-
             product =
                 products.find(
                     item =>
-                        item.slug ===
-                        slug
+                        item.slug === slug
                 );
         }
 
-        if (!product) {
+        /*
+         * إذا لم نجده في المنتجات المحملة،
+         * نحاول جلبه مباشرة من Supabase.
+         */
 
+        if (!product && id) {
+            const {
+                data,
+                error
+            } = await db
+                .from("products")
+                .select(`
+                    *,
+                    categories (
+                        id,
+                        slug,
+                        name_ar,
+                        name_fr,
+                        name_en
+                    ),
+                    product_images (
+                        id,
+                        storage_path,
+                        media_type,
+                        alt_text,
+                        sort_order,
+                        is_cover
+                    )
+                `)
+                .eq(
+                    "id",
+                    id
+                )
+                .eq(
+                    "is_active",
+                    true
+                )
+                .maybeSingle();
+
+            if (!error && data) {
+                product = data;
+            }
+        }
+
+        if (!product) {
             target.innerHTML = `
                 <div class="empty-state">
                     المنتج غير موجود أو لم يعد متاحًا.
@@ -757,7 +916,8 @@
             localized(
                 product,
                 "name"
-            );
+            ) ||
+            "Atelier Noura";
 
         const description =
             localized(
@@ -766,17 +926,12 @@
             );
 
         const image =
-            productImage(
-                product
-            );
+            productImage(product);
 
         const stock =
-            Number(
-                product.stock || 0
-            );
+            Number(product.stock || 0);
 
         target.innerHTML = `
-
             <div
                 class="product-detail"
                 style="
@@ -926,7 +1081,6 @@
     ===================================================== */
 
     function renderCart() {
-
         const target =
             $(
                 "#cartItems, [data-cart-items]"
@@ -940,16 +1094,13 @@
             getCart();
 
         if (!cart.length) {
-
             target.innerHTML = `
                 <div class="empty-state">
                     السلة فارغة.
                 </div>
             `;
 
-            updateCartTotals(
-                0
-            );
+            updateCartTotals(0);
 
             return;
         }
@@ -982,13 +1133,10 @@
                         ) *
                         quantity;
 
-                    subtotal +=
-                        line;
+                    subtotal += line;
 
                     const image =
-                        productImage(
-                            product
-                        );
+                        productImage(product);
 
                     const name =
                         localized(
@@ -997,7 +1145,6 @@
                         );
 
                     return `
-
                         <div
                             class="cart-item"
                             style="
@@ -1084,15 +1231,10 @@
                 })
                 .join("");
 
-        updateCartTotals(
-            subtotal
-        );
+        updateCartTotals(subtotal);
     }
 
-    function updateCartTotals(
-        subtotal
-    ) {
-
+    function updateCartTotals(subtotal) {
         const subtotalElement =
             $(
                 "#cartSubtotal, [data-cart-subtotal]"
@@ -1105,16 +1247,12 @@
 
         if (subtotalElement) {
             subtotalElement.textContent =
-                formatPrice(
-                    subtotal
-                );
+                formatPrice(subtotal);
         }
 
         if (totalElement) {
             totalElement.textContent =
-                formatPrice(
-                    subtotal
-                );
+                formatPrice(subtotal);
         }
     }
 
@@ -1123,12 +1261,10 @@
     ===================================================== */
 
     function getCheckoutInputs() {
-
         return {
-
             form:
                 $(
-                    "#checkout-form, #order-form"
+                    "#checkout-form, #checkoutForm, #order-form"
                 ),
 
             name:
@@ -1153,7 +1289,7 @@
 
             delivery:
                 $(
-                    "#delivery-method, select[name='delivery_method']"
+                    "#delivery-method, #deliveryMethod, select[name='delivery_method']"
                 ),
 
             address:
@@ -1170,26 +1306,19 @@
                 $(
                     "#checkout-message"
                 )
-
         };
     }
 
-    function showCheckoutMessage(
-        message
-    ) {
-
+    function showCheckoutMessage(message) {
         const element =
-            $(
-                "#checkout-message"
-            );
+            $("#checkout-message");
 
         if (!element) {
             alert(message);
             return;
         }
 
-        element.textContent =
-            message;
+        element.textContent = message;
 
         element.classList.add(
             "show"
@@ -1197,23 +1326,17 @@
     }
 
     function hideCheckoutMessage() {
-
-        $(
-            "#checkout-message"
-        )?.classList.remove(
-            "show"
-        );
+        $("#checkout-message")
+            ?.classList.remove(
+                "show"
+            );
     }
 
-    function validateName(
-        value
-    ) {
-
+    function validateName(value) {
         const name =
             normalizeText(value);
 
         if (!name) {
-
             return {
                 valid: false,
                 message:
@@ -1222,14 +1345,13 @@
         }
 
         if (
-            name.length < 2 ||
+            name.length < 3 ||
             name.length > 60
         ) {
-
             return {
                 valid: false,
                 message:
-                    "اكتب اسمًا صحيحًا."
+                    "اكتب اسمًا صحيحًا من 3 أحرف على الأقل."
             };
         }
 
@@ -1237,7 +1359,6 @@
             /^[\p{L}\p{M}]+(?:[\s'-][\p{L}\p{M}]+)*$/u;
 
         if (!regex.test(name)) {
-
             return {
                 valid: false,
                 message:
@@ -1251,20 +1372,16 @@
         };
     }
 
-    function validatePhone(
-        value
-    ) {
-
+    function validatePhone(value) {
         const phone =
             String(value || "")
                 .trim()
-                .replace(/\s+/g, "");
+                .replace(/[\s-]/g, "");
 
         const regex =
             /^(0[567][0-9]{8}|\+213[567][0-9]{8})$/;
 
         if (!phone) {
-
             return {
                 valid: false,
                 message:
@@ -1273,7 +1390,6 @@
         }
 
         if (!regex.test(phone)) {
-
             return {
                 valid: false,
                 message:
@@ -1287,21 +1403,15 @@
         };
     }
 
-    function validateEmail(
-        value
-    ) {
-
+    /*
+     * البريد الإلكتروني اختياري.
+     */
+    function validateEmail(value) {
         const email =
             String(value || "")
                 .trim();
 
-        /*
-           البريد اختياري.
-           الفراغ = صحيح.
-        */
-
         if (!email) {
-
             return {
                 valid: true,
                 value: null
@@ -1312,7 +1422,6 @@
             /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
         if (!regex.test(email)) {
-
             return {
                 valid: false,
                 message:
@@ -1328,7 +1437,6 @@
     }
 
     function renderWilayas() {
-
         const select =
             $("#wilaya");
 
@@ -1345,11 +1453,21 @@
         deliveryZones.forEach(
             zone => {
 
+                const code =
+                    zone.wilaya_code ||
+                    zone.code ||
+                    zone.wilaya;
+
                 const name =
                     zone.wilaya_name_ar ||
                     zone.wilaya ||
                     zone.wilaya_name_fr ||
-                    zone.wilaya_code;
+                    zone.wilaya_name_en ||
+                    code;
+
+                if (!code) {
+                    return;
+                }
 
                 const option =
                     document.createElement(
@@ -1357,7 +1475,7 @@
                     );
 
                 option.value =
-                    zone.wilaya_code;
+                    code;
 
                 option.textContent =
                     name;
@@ -1370,31 +1488,39 @@
     }
 
     function getDeliveryMethod() {
-
         return (
-            $("#delivery-method")
-                ?.value ||
+            $(
+                "#delivery-method, #deliveryMethod"
+            )?.value ||
             "home"
         );
     }
 
     function selectedZone() {
-
         const code =
             $("#wilaya")
                 ?.value;
 
+        if (!code) {
+            return null;
+        }
+
         return deliveryZones.find(
-            zone =>
-                String(
-                    zone.wilaya_code
-                ) ===
-                String(code)
+            zone => {
+                const zoneCode =
+                    zone.wilaya_code ||
+                    zone.code ||
+                    zone.wilaya;
+
+                return (
+                    String(zoneCode) ===
+                    String(code)
+                );
+            }
         );
     }
 
     function checkoutSubtotal() {
-
         return getCart().reduce(
             (sum, item) => {
 
@@ -1421,7 +1547,6 @@
     }
 
     function updateCheckoutTotal() {
-
         const subtotal =
             checkoutSubtotal();
 
@@ -1434,7 +1559,6 @@
         let deliveryFee = 0;
 
         if (zone) {
-
             deliveryFee =
                 method === "office"
                     ? Number(
@@ -1460,28 +1584,21 @@
 
         if (subtotalElement) {
             subtotalElement.textContent =
-                formatPrice(
-                    subtotal
-                );
+                formatPrice(subtotal);
         }
 
         if (deliveryElement) {
             deliveryElement.textContent =
-                formatPrice(
-                    deliveryFee
-                );
+                formatPrice(deliveryFee);
         }
 
         if (totalElement) {
             totalElement.textContent =
-                formatPrice(
-                    total
-                );
+                formatPrice(total);
         }
     }
 
     function renderCheckoutItems() {
-
         const target =
             $("#checkout-items");
 
@@ -1493,7 +1610,6 @@
             getCart();
 
         if (!cart.length) {
-
             target.innerHTML = `
                 <div class="checkout-empty">
                     السلة فارغة.
@@ -1535,7 +1651,6 @@
                         );
 
                     return `
-
                         <div class="checkout-item">
 
                             ${
@@ -1565,18 +1680,15 @@
 
                         </div>
                     `;
-
                 })
                 .join("");
     }
 
     function buildOrderItems() {
-
         const cart =
             getCart();
 
         if (!cart.length) {
-
             return {
                 valid: false,
                 message:
@@ -1587,10 +1699,7 @@
 
         const items = [];
 
-        for (
-            const cartItem of cart
-        ) {
-
+        for (const cartItem of cart) {
             const product =
                 products.find(
                     p =>
@@ -1601,7 +1710,6 @@
                 );
 
             if (!product) {
-
                 return {
                     valid: false,
                     message:
@@ -1616,12 +1724,9 @@
                 );
 
             if (
-                !Number.isInteger(
-                    quantity
-                ) ||
+                !Number.isInteger(quantity) ||
                 quantity <= 0
             ) {
-
                 return {
                     valid: false,
                     message:
@@ -1634,7 +1739,6 @@
                 quantity >
                 Number(product.stock || 0)
             ) {
-
                 return {
                     valid: false,
                     message:
@@ -1643,11 +1747,14 @@
                 };
             }
 
+            /*
+             * مهم:
+             * products.id في قاعدة البيانات الحالية bigint.
+             */
             items.push({
                 product_id:
                     Number(product.id),
-                quantity:
-                    quantity
+                quantity
             });
         }
 
@@ -1657,10 +1764,7 @@
         };
     }
 
-    async function submitOrder(
-        event
-    ) {
-
+    async function submitOrder(event) {
         event.preventDefault();
 
         hideCheckoutMessage();
@@ -1678,7 +1782,6 @@
             );
 
         if (!nameResult.valid) {
-
             showCheckoutMessage(
                 nameResult.message
             );
@@ -1694,7 +1797,6 @@
             );
 
         if (!phoneResult.valid) {
-
             showCheckoutMessage(
                 phoneResult.message
             );
@@ -1710,7 +1812,6 @@
             );
 
         if (!emailResult.valid) {
-
             showCheckoutMessage(
                 emailResult.message
             );
@@ -1724,7 +1825,6 @@
             selectedZone();
 
         if (!zone) {
-
             showCheckoutMessage(
                 "اختر الولاية من فضلك."
             );
@@ -1746,7 +1846,6 @@
             deliveryMethod === "home" &&
             address.length < 5
         ) {
-
             showCheckoutMessage(
                 "أدخل عنوانًا صحيحًا للتوصيل إلى المنزل."
             );
@@ -1760,7 +1859,6 @@
             buildOrderItems();
 
         if (!orderItems.valid) {
-
             showCheckoutMessage(
                 orderItems.message
             );
@@ -1775,7 +1873,7 @@
 
         const buttons =
             $$(
-                "#checkout-form button[type='submit'], [data-submit-order]"
+                "#checkout-form button[type='submit'], #checkoutForm button[type='submit'], [data-submit-order]"
             );
 
         buttons.forEach(
@@ -1826,13 +1924,14 @@
 
                     p_wilaya_code:
                         String(
-                            zone.wilaya_code
+                            zone.wilaya_code ||
+                            zone.code ||
+                            zone.wilaya
                         )
                 }
             );
 
             if (error) {
-
                 console.error(
                     "place_order error:",
                     error
@@ -1846,11 +1945,15 @@
                 return;
             }
 
-            if (
-                !data ||
-                data.success !== true
-            ) {
+            const orderResult =
+                Array.isArray(data)
+                    ? data[0]
+                    : data;
 
+            if (
+                !orderResult ||
+                orderResult.success !== true
+            ) {
                 console.error(
                     "Invalid order response:",
                     data
@@ -1865,7 +1968,9 @@
 
             localStorage.setItem(
                 LAST_ORDER_KEY,
-                JSON.stringify(data)
+                JSON.stringify(
+                    orderResult
+                )
             );
 
             clearCart();
@@ -1918,6 +2023,7 @@
                     );
 
                 if (add) {
+                    event.preventDefault();
 
                     addToCart(
                         add.dataset.addToCart
@@ -1932,6 +2038,7 @@
                     );
 
                 if (productAdd) {
+                    event.preventDefault();
 
                     const quantity =
                         Number(
@@ -1954,6 +2061,7 @@
                     );
 
                 if (remove) {
+                    event.preventDefault();
 
                     removeCartItem(
                         remove.dataset.cartRemove
@@ -1968,6 +2076,7 @@
                     );
 
                 if (minus) {
+                    event.preventDefault();
 
                     const item =
                         getCart().find(
@@ -1981,7 +2090,6 @@
                         );
 
                     if (item) {
-
                         updateCartItem(
                             item.product_id,
                             Number(
@@ -1999,6 +2107,7 @@
                     );
 
                 if (plus) {
+                    event.preventDefault();
 
                     const item =
                         getCart().find(
@@ -2012,7 +2121,6 @@
                         );
 
                     if (item) {
-
                         updateCartItem(
                             item.product_id,
                             Number(
@@ -2020,6 +2128,8 @@
                             ) + 1
                         );
                     }
+
+                    return;
                 }
             }
         );
@@ -2034,7 +2144,6 @@
                     );
 
                 if (quantity) {
-
                     updateCartItem(
                         quantity.dataset.cartQuantity,
                         Number(
@@ -2047,15 +2156,16 @@
 
                 if (
                     event.target.matches(
-                        "#wilaya, #delivery-method"
+                        "#wilaya, #delivery-method, #deliveryMethod"
                     )
                 ) {
-
                     updateCheckoutTotal();
 
                     if (
                         event.target.id ===
-                        "delivery-method"
+                            "delivery-method" ||
+                        event.target.id ===
+                            "deliveryMethod"
                     ) {
                         toggleAddress();
                     }
@@ -2065,11 +2175,10 @@
 
         const checkout =
             $(
-                "#checkout-form, #order-form"
+                "#checkout-form, #checkoutForm, #order-form"
             );
 
         if (checkout) {
-
             checkout.addEventListener(
                 "submit",
                 submitOrder
@@ -2078,7 +2187,6 @@
     }
 
     function toggleAddress() {
-
         const method =
             getDeliveryMethod();
 
@@ -2121,7 +2229,6 @@
     ===================================================== */
 
     function setupRealtime() {
-
         if (!db) {
             return;
         }
@@ -2130,6 +2237,7 @@
             .channel(
                 "atelier-noura-store"
             )
+
             .on(
                 "postgres_changes",
                 {
@@ -2145,18 +2253,22 @@
 
                         renderProducts();
                         renderFeatured();
+                        renderNewArrivals();
                         renderCart();
                         renderCheckoutItems();
                         updateCheckoutTotal();
+                        renderProductDetails();
 
                     } catch (error) {
 
                         console.error(
+                            "Realtime products error:",
                             error
                         );
                     }
                 }
             )
+
             .on(
                 "postgres_changes",
                 {
@@ -2172,21 +2284,25 @@
 
                         renderProducts();
                         renderFeatured();
+                        renderNewArrivals();
                         renderCart();
                         renderCheckoutItems();
+                        renderProductDetails();
 
                     } catch (error) {
 
                         console.error(
+                            "Realtime images error:",
                             error
                         );
                     }
                 }
             )
+
             .subscribe(
                 status => {
                     console.log(
-                        "Realtime:",
+                        "Atelier Noura Realtime:",
                         status
                     );
                 }
@@ -2201,24 +2317,48 @@
 
         try {
 
-            initializeDatabase();
+            /*
+             * مهم جدًا:
+             * ننتظر Supabase حتى يصبح client حقيقيًا.
+             */
+            await initializeDatabase();
 
+            /*
+             * تحميل كل البيانات.
+             */
             await loadProducts();
 
             await loadCategories();
 
             await loadDeliveryZones();
 
+            /*
+             * تحديث السلة.
+             */
             updateCartCount();
 
+            /*
+             * الصفحة الرئيسية.
+             */
             renderProducts();
 
             renderFeatured();
 
+            renderNewArrivals();
+
+            /*
+             * السلة.
+             */
             renderCart();
 
+            /*
+             * صفحة المنتج.
+             */
             await renderProductDetails();
 
+            /*
+             * Checkout.
+             */
             if ($("#wilaya")) {
 
                 renderWilayas();
@@ -2230,9 +2370,19 @@
                 toggleAddress();
             }
 
+            /*
+             * الأحداث.
+             */
             setupEvents();
 
+            /*
+             * Realtime.
+             */
             setupRealtime();
+
+            console.log(
+                `Atelier Noura loaded successfully: ${products.length} products`
+            );
 
         } catch (error) {
 
@@ -2241,23 +2391,50 @@
                 error
             );
 
+            /*
+             * إظهار الخطأ فقط في الأماكن المناسبة.
+             */
             const detail =
                 $("#productDetail");
 
             if (detail) {
-
                 detail.innerHTML = `
                     <div class="empty-state">
                         حدث خطأ في الاتصال بقاعدة البيانات.
                         <br>
-                        ${escapeHTML(
-                            error.message
-                        )}
+                        <small>
+                            ${escapeHTML(
+                                error.message
+                            )}
+                        </small>
+                    </div>
+                `;
+            }
+
+            const productGrid =
+                $(
+                    "[data-products], #products-grid, #productsGrid, .products-grid"
+                );
+
+            if (productGrid) {
+                productGrid.innerHTML = `
+                    <div class="empty-state">
+                        تعذر تحميل المنتجات حاليًا.
+                        <br>
+                        <small>
+                            ${escapeHTML(
+                                error.message
+                            )}
+                        </small>
                     </div>
                 `;
             }
         }
     }
+
+    /* =====================================================
+       START
+    ===================================================== */
 
     document.addEventListener(
         "DOMContentLoaded",
