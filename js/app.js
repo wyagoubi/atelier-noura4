@@ -1,66 +1,39 @@
 /* =========================================================
-   Atelier Noura - Main Application
+   Atelier Noura
    File: js/app.js
-
-   Responsibilities:
-   - Supabase connection
-   - Products
-   - Categories
-   - Product details
-   - Cart
-   - Checkout
-   - Delivery zones
-   - Order creation
-   - Realtime product updates
 ========================================================= */
 
 (function () {
+
     "use strict";
 
-    /* =========================================================
-       CONFIGURATION
-    ========================================================= */
+    const CART_KEY =
+        "atelier_noura_cart";
 
-    const SUPABASE_URL =
-        "https://rjhdfzwsmsijpwfqglxn.supabase.co";
+    const LAST_ORDER_KEY =
+        "atelier_noura_last_order";
 
-    const SUPABASE_ANON_KEY =
-        window.SUPABASE_CONFIG?.anonKey || "";
+    let db = null;
 
-    let STORE_DB = null;
-
-    /* =========================================================
-       GLOBAL STATE
-    ========================================================= */
-
-    let allProducts = [];
-    let allCategories = [];
+    let products = [];
+    let categories = [];
     let deliveryZones = [];
-
-    let currentProduct = null;
-
-    const CART_KEY = "atelier_noura_cart";
-    const LAST_ORDER_KEY = "atelier_noura_last_order";
-
-
-    /* =========================================================
-       HELPERS
-    ========================================================= */
 
     function $(selector, parent = document) {
         return parent.querySelector(selector);
     }
 
     function $$(selector, parent = document) {
-        return Array.from(parent.querySelectorAll(selector));
+        return Array.from(
+            parent.querySelectorAll(selector)
+        );
     }
 
     function escapeHTML(value) {
-        if (value === null || value === undefined) {
-            return "";
-        }
 
-        return String(value)
+        return String(
+            value ?? ""
+        )
             .replace(/&/g, "&amp;")
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;")
@@ -69,46 +42,46 @@
     }
 
     function normalizeText(value) {
+
         return String(value || "")
             .trim()
             .replace(/\s+/g, " ");
     }
 
     function formatPrice(value) {
-        const number = Number(value || 0);
 
-        return new Intl.NumberFormat("fr-DZ", {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 2
-        }).format(number) + " DA";
+        return (
+            Number(value || 0)
+                .toLocaleString("fr-DZ") +
+            " DA"
+        );
     }
 
-    function getLanguage() {
+    function language() {
+
         return (
-            localStorage.getItem("atelier_noura_language") ||
+            localStorage.getItem(
+                "atelier_noura_language"
+            ) ||
             document.documentElement.lang ||
             "ar"
-        ).toLowerCase();
+        );
     }
 
-    function getLocalizedValue(item, field) {
+    function localized(item, field) {
+
         if (!item) {
             return "";
         }
 
-        const lang = getLanguage();
-
-        const values = {
-            ar: item[`${field}_ar`],
-            fr: item[`${field}_fr`],
-            en: item[`${field}_en`]
-        };
+        const lang =
+            language();
 
         return (
-            values[lang] ||
-            values.ar ||
-            values.fr ||
-            values.en ||
+            item[`${field}_${lang}`] ||
+            item[`${field}_ar`] ||
+            item[`${field}_fr`] ||
+            item[`${field}_en`] ||
             ""
         );
     }
@@ -117,206 +90,168 @@
         alert(message);
     }
 
-    function getProductImage(product) {
-        if (!product) {
+    /* =====================================================
+       SUPABASE
+    ===================================================== */
+
+    function initializeDatabase() {
+
+        if (
+            typeof initSupabase !==
+            "function"
+        ) {
+            throw new Error(
+                "Supabase configuration file is missing."
+            );
+        }
+
+        db = initSupabase();
+
+        return db;
+    }
+
+    /* =====================================================
+       IMAGE
+    ===================================================== */
+
+    function getImageUrl(path) {
+
+        if (!path) {
             return "";
         }
 
-        if (product.cover_image) {
-            return product.cover_image;
+        if (
+            path.startsWith("http://") ||
+            path.startsWith("https://") ||
+            path.startsWith("data:")
+        ) {
+            return path;
         }
+
+        if (!db) {
+            return "";
+        }
+
+        return db.storage
+            .from("product-media")
+            .getPublicUrl(path)
+            .data.publicUrl;
+    }
+
+    function productImage(product) {
 
         if (
-            Array.isArray(product.product_images) &&
-            product.product_images.length > 0
+            product.cover_image
         ) {
-            const cover =
-                product.product_images.find((image) => image.is_cover) ||
-                product.product_images[0];
-
-            return cover?.storage_path || "";
-        }
-
-        return "";
-    }
-
-    /* =========================================================
-       SUPABASE INITIALIZATION
-    ========================================================= */
-
-    async function initializeSupabase() {
-        if (window.supabase?.createClient) {
-            const key =
-                SUPABASE_ANON_KEY ||
-                window.SUPABASE_CONFIG?.anonKey;
-
-            if (!key || key === "YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY") {
-                console.error("Supabase publishable key is missing.");
-                return null;
-            }
-
-            STORE_DB = window.supabase.createClient(
-                SUPABASE_URL,
-                key
+            return getImageUrl(
+                product.cover_image
             );
-
-            return STORE_DB;
         }
 
-        await loadSupabaseScript();
+        const images =
+            product.product_images ||
+            [];
 
-        const key =
-            SUPABASE_ANON_KEY ||
-            window.SUPABASE_CONFIG?.anonKey;
+        const cover =
+            images.find(
+                image => image.is_cover
+            ) ||
+            images[0];
 
-        if (!key || key === "YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY") {
-            console.error("Supabase publishable key is missing.");
-            return null;
-        }
-
-        STORE_DB = window.supabase.createClient(
-            SUPABASE_URL,
-            key
+        return getImageUrl(
+            cover?.storage_path
         );
-
-        return STORE_DB;
     }
 
-    function loadSupabaseScript() {
-        return new Promise((resolve, reject) => {
-            if (window.supabase?.createClient) {
-                resolve();
-                return;
-            }
-
-            const existing =
-                document.querySelector(
-                    'script[src*="supabase-js"]'
-                );
-
-            if (existing) {
-                existing.addEventListener("load", resolve);
-                existing.addEventListener("error", reject);
-                return;
-            }
-
-            const script = document.createElement("script");
-
-            script.src =
-                "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
-
-            script.onload = resolve;
-
-            script.onerror = () => {
-                reject(
-                    new Error(
-                        "Unable to load Supabase library."
-                    )
-                );
-            };
-
-            document.head.appendChild(script);
-        });
-    }
-
-    /* =========================================================
+    /* =====================================================
        CART
-    ========================================================= */
+    ===================================================== */
 
     function getCart() {
-        try {
-            const saved =
-                localStorage.getItem(CART_KEY);
 
-            if (!saved) {
+        try {
+
+            const raw =
+                localStorage.getItem(
+                    CART_KEY
+                );
+
+            if (!raw) {
                 return [];
             }
 
-            const parsed = JSON.parse(saved);
+            const data =
+                JSON.parse(raw);
 
-            return Array.isArray(parsed)
-                ? parsed
+            return Array.isArray(data)
+                ? data
                 : [];
-        } catch (error) {
-            console.error(
-                "Unable to read cart:",
-                error
-            );
+
+        } catch {
 
             return [];
+
         }
     }
 
     function saveCart(cart) {
+
         localStorage.setItem(
             CART_KEY,
             JSON.stringify(cart)
         );
 
-        updateCartCounter();
+        updateCartCount();
 
-        document.dispatchEvent(
-            new CustomEvent("atelier-cart-updated", {
-                detail: cart
-            })
-        );
+        renderCart();
     }
 
     function clearCart() {
-        localStorage.removeItem(CART_KEY);
 
-        updateCartCounter();
-
-        document.dispatchEvent(
-            new CustomEvent("atelier-cart-updated", {
-                detail: []
-            })
-        );
-    }
-
-    function getCartQuantity() {
-        return getCart().reduce(
-            (total, item) =>
-                total + Number(item.quantity || 0),
-            0
-        );
-    }
-
-    function updateCartCounter() {
-        const quantity = getCartQuantity();
-
-        const counters = $$(
-            "[data-cart-count], #cart-count, .cart-count"
+        localStorage.removeItem(
+            CART_KEY
         );
 
-        counters.forEach((element) => {
-            element.textContent = String(quantity);
-
-            if (quantity > 0) {
-                element.classList.remove("hidden");
-            } else {
-                element.classList.add("hidden");
-            }
-        });
+        updateCartCount();
     }
 
-    function addToCart(productId, quantity = 1) {
+    function updateCartCount() {
+
+        const count =
+            getCart().reduce(
+                (sum, item) =>
+                    sum +
+                    Number(
+                        item.quantity || 0
+                    ),
+                0
+            );
+
+        $$("#cartCount, #cart-count, .cart-count")
+            .forEach(element => {
+                element.textContent =
+                    String(count);
+            });
+    }
+
+    function addToCart(
+        productId,
+        quantity = 1
+    ) {
+
         const product =
-            allProducts.find(
-                (item) => item.id === productId
+            products.find(
+                item =>
+                    String(item.id) ===
+                    String(productId)
             );
 
         if (!product) {
-            showMessage(
-                "المنتج غير موجود أو لم يعد متاحًا."
-            );
-            return;
-        }
 
-        if (!product.is_active) {
             showMessage(
-                "هذا المنتج غير متاح حاليًا."
+                "المنتج غير موجود."
             );
+
             return;
         }
 
@@ -324,44 +259,60 @@
             Number(product.stock || 0);
 
         if (stock <= 0) {
+
             showMessage(
-                "عذرًا، هذا المنتج غير متوفر حاليًا."
+                "هذا المنتج غير متوفر حاليًا."
             );
+
             return;
         }
 
-        const requestedQuantity =
-            Math.max(1, Number(quantity || 1));
-
-        const cart = getCart();
+        const cart =
+            getCart();
 
         const existing =
             cart.find(
-                (item) =>
-                    item.product_id === product.id
+                item =>
+                    String(item.product_id) ===
+                    String(product.id)
+            );
+
+        const requested =
+            Math.max(
+                1,
+                Number(quantity || 1)
             );
 
         if (existing) {
-            const newQuantity =
-                Number(existing.quantity || 0) +
-                requestedQuantity;
 
-            if (newQuantity > stock) {
+            const next =
+                Number(existing.quantity) +
+                requested;
+
+            if (next > stock) {
+
                 showMessage(
-                    `الكمية المتوفرة حاليًا هي ${stock} فقط.`
+                    `المتوفر فقط ${stock} قطعة.`
                 );
+
                 return;
             }
 
-            existing.quantity = newQuantity;
+            existing.quantity =
+                next;
+
         } else {
+
             cart.push({
-                product_id: product.id,
-                quantity: Math.min(
-                    requestedQuantity,
-                    stock
-                )
+                product_id:
+                    product.id,
+                quantity:
+                    Math.min(
+                        requested,
+                        stock
+                    )
             });
+
         }
 
         saveCart(cart);
@@ -371,13 +322,31 @@
         );
     }
 
-    function updateCartItem(productId, quantity) {
-        const cart = getCart();
+    function removeCartItem(productId) {
+
+        const cart =
+            getCart().filter(
+                item =>
+                    String(item.product_id) !==
+                    String(productId)
+            );
+
+        saveCart(cart);
+    }
+
+    function updateCartItem(
+        productId,
+        quantity
+    ) {
+
+        const cart =
+            getCart();
 
         const item =
             cart.find(
-                (cartItem) =>
-                    cartItem.product_id === productId
+                entry =>
+                    String(entry.product_id) ===
+                    String(productId)
             );
 
         if (!item) {
@@ -385,217 +354,223 @@
         }
 
         const product =
-            allProducts.find(
-                (productItem) =>
-                    productItem.id === productId
+            products.find(
+                entry =>
+                    String(entry.id) ===
+                    String(productId)
             );
 
         const stock =
             Number(product?.stock || 0);
 
-        let newQuantity =
+        let next =
             Number(quantity || 0);
 
-        if (newQuantity <= 0) {
-            removeCartItem(productId);
+        if (next <= 0) {
+
+            removeCartItem(
+                productId
+            );
+
             return;
         }
 
-        if (stock > 0 && newQuantity > stock) {
-            newQuantity = stock;
+        if (
+            stock > 0 &&
+            next > stock
+        ) {
+
+            next = stock;
 
             showMessage(
-                `الكمية القصوى المتوفرة هي ${stock}.`
+                `المتوفر فقط ${stock} قطعة.`
             );
         }
 
-        item.quantity = newQuantity;
+        item.quantity =
+            next;
 
         saveCart(cart);
-
-        renderCart();
     }
 
-    function removeCartItem(productId) {
-        const cart =
-            getCart().filter(
-                (item) =>
-                    item.product_id !== productId
-            );
-
-        saveCart(cart);
-
-        renderCart();
-    }
-
-    /* =========================================================
+    /* =====================================================
        LOAD PRODUCTS
-    ========================================================= */
+    ===================================================== */
 
     async function loadProducts() {
-        if (!STORE_DB) {
-            return [];
-        }
 
-        const { data, error } =
-            await STORE_DB
-                .from("products")
-                .select(`
-                    *,
-                    categories (
-                        id,
-                        slug,
-                        name_ar,
-                        name_fr,
-                        name_en
-                    ),
-                    product_images (
-                        id,
-                        storage_path,
-                        media_type,
-                        alt_text,
-                        sort_order,
-                        is_cover
-                    )
-                `)
-                .eq("is_active", true)
-                .order("created_at", {
+        const {
+            data,
+            error
+        } = await db
+
+            .from("products")
+
+            .select(`
+                *,
+                categories (
+                    id,
+                    slug,
+                    name_ar,
+                    name_fr,
+                    name_en
+                ),
+                product_images (
+                    id,
+                    storage_path,
+                    media_type,
+                    alt_text,
+                    sort_order,
+                    is_cover
+                )
+            `)
+
+            .eq(
+                "is_active",
+                true
+            )
+
+            .order(
+                "created_at",
+                {
                     ascending: false
-                });
+                }
+            );
 
         if (error) {
+
             console.error(
-                "Products loading error:",
+                "Products error:",
                 error
             );
 
-            showMessage(
-                "حدث خطأ أثناء تحميل المنتجات."
-            );
-
-            return [];
+            throw error;
         }
 
-        allProducts = data || [];
+        products =
+            data || [];
 
-        return allProducts;
+        return products;
     }
-
-    /* =========================================================
-       LOAD CATEGORIES
-    ========================================================= */
 
     async function loadCategories() {
-        if (!STORE_DB) {
-            return [];
-        }
 
-        const { data, error } =
-            await STORE_DB
-                .from("categories")
-                .select("*")
-                .eq("is_active", true)
-                .order("sort_order", {
+        const {
+            data,
+            error
+        } = await db
+
+            .from("categories")
+
+            .select("*")
+
+            .eq(
+                "is_active",
+                true
+            )
+
+            .order(
+                "sort_order",
+                {
                     ascending: true
-                });
+                }
+            );
 
         if (error) {
+
             console.error(
-                "Categories loading error:",
+                "Categories error:",
                 error
             );
 
             return [];
         }
 
-        allCategories = data || [];
+        categories =
+            data || [];
 
-        return allCategories;
+        return categories;
     }
 
-    /* =========================================================
-       LOAD DELIVERY ZONES
-    ========================================================= */
-
     async function loadDeliveryZones() {
-        if (!STORE_DB) {
-            return [];
-        }
 
-        const { data, error } =
-            await STORE_DB
-                .from("delivery_zones")
-                .select("*")
-                .eq("is_active", true)
-                .order("wilaya_code", {
+        const {
+            data,
+            error
+        } = await db
+
+            .from("delivery_zones")
+
+            .select("*")
+
+            .eq(
+                "is_active",
+                true
+            )
+
+            .order(
+                "wilaya_code",
+                {
                     ascending: true
-                });
+                }
+            );
 
         if (error) {
+
             console.error(
-                "Delivery zones loading error:",
+                "Delivery error:",
                 error
             );
 
             return [];
         }
 
-        deliveryZones = data || [];
+        deliveryZones =
+            data || [];
 
         return deliveryZones;
     }
 
-    /* =========================================================
+    /* =====================================================
        PRODUCT CARD
-    ========================================================= */
+    ===================================================== */
 
-    function createProductCard(product) {
-        const image =
-            getProductImage(product);
+    function productCard(product) {
 
         const name =
-            getLocalizedValue(
+            localized(
                 product,
                 "name"
             ) ||
-            product.name_ar ||
-            product.name_fr ||
-            product.name_en ||
-            "Product";
+            "Produit";
 
         const category =
-            product.categories
-                ? getLocalizedValue(
-                      product.categories,
-                      "name"
-                  )
-                : "";
+            localized(
+                product.categories,
+                "name"
+            );
 
-        const price =
-            Number(product.price || 0);
-
-        const comparePrice =
-            Number(
-                product.compare_at_price || 0
+        const image =
+            productImage(
+                product
             );
 
         const stock =
-            Number(product.stock || 0);
-
-        const productUrl =
-            `product.html?id=${encodeURIComponent(
-                product.id
-            )}`;
+            Number(
+                product.stock || 0
+            );
 
         return `
             <article
                 class="product-card"
                 data-product-id="${escapeHTML(product.id)}"
             >
+
                 <a
-                    href="${productUrl}"
                     class="product-card-image"
+                    href="product.html?id=${encodeURIComponent(product.id)}"
                 >
+
                     ${
                         image
                             ? `
@@ -611,6 +586,7 @@
                                 </div>
                             `
                     }
+
                 </a>
 
                 <div class="product-card-content">
@@ -626,73 +602,43 @@
                     }
 
                     <h3 class="product-title">
-                        <a href="${productUrl}">
+                        <a
+                            href="product.html?id=${encodeURIComponent(product.id)}"
+                        >
                             ${escapeHTML(name)}
                         </a>
                     </h3>
 
                     <div class="product-price">
-
-                        <span class="current-price">
-                            ${formatPrice(price)}
-                        </span>
-
-                        ${
-                            comparePrice > price
-                                ? `
-                                    <span class="old-price">
-                                        ${formatPrice(comparePrice)}
-                                    </span>
-                                `
-                                : ""
-                        }
-
+                        ${formatPrice(product.price)}
                     </div>
-
-                    ${
-                        stock <= 0
-                            ? `
-                                <span class="stock-status">
-                                    غير متوفر
-                                </span>
-                            `
-                            : ""
-                    }
 
                     <button
                         type="button"
                         class="add-to-cart-btn"
-                        data-add-to-cart="${escapeHTML(
-                            product.id
-                        )}"
-                        ${
-                            stock <= 0
-                                ? "disabled"
-                                : ""
-                        }
+                        data-add-to-cart="${escapeHTML(product.id)}"
+                        ${stock <= 0 ? "disabled" : ""}
                     >
                         ${
-                            stock <= 0
-                                ? "غير متوفر"
-                                : "أضف إلى السلة"
+                            stock > 0
+                                ? "أضف إلى السلة"
+                                : "غير متوفر"
                         }
                     </button>
 
                 </div>
+
             </article>
         `;
     }
 
-    /* =========================================================
-       RENDER PRODUCTS
-    ========================================================= */
-
     function renderProducts(
-        products = allProducts,
-        container = null
+        list = products,
+        target = null
     ) {
-        const target =
-            container ||
+
+        target =
+            target ||
             $(
                 "[data-products], #products-grid, .products-grid"
             );
@@ -701,7 +647,8 @@
             return;
         }
 
-        if (!products.length) {
+        if (!list.length) {
+
             target.innerHTML = `
                 <div class="empty-state">
                     لا توجد منتجات متاحة حاليًا.
@@ -712,16 +659,13 @@
         }
 
         target.innerHTML =
-            products
-                .map(createProductCard)
+            list
+                .map(productCard)
                 .join("");
     }
 
-    /* =========================================================
-       FEATURED PRODUCTS
-    ========================================================= */
+    function renderFeatured() {
 
-    function renderFeaturedProducts() {
         const target =
             $(
                 "[data-featured-products], #featured-products, .featured-products"
@@ -732,312 +676,260 @@
         }
 
         const featured =
-            allProducts.filter(
-                (product) =>
+            products.filter(
+                product =>
                     product.is_featured
             );
 
         renderProducts(
             featured.length
                 ? featured
-                : allProducts.slice(0, 8),
+                : products.slice(0, 8),
             target
         );
     }
 
-    /* =========================================================
-       NEW ARRIVALS
-    ========================================================= */
-
-    function renderNewArrivals() {
-        const target =
-            $(
-                "[data-new-products], #new-products, .new-products"
-            );
-
-        if (!target) {
-            return;
-        }
-
-        renderProducts(
-            allProducts.slice(0, 8),
-            target
-        );
-    }
-
-    /* =========================================================
-       CATEGORIES
-    ========================================================= */
-
-    function renderCategories() {
-        const target =
-            $(
-                "[data-categories], #categories-grid, .categories-grid"
-            );
-
-        if (!target) {
-            return;
-        }
-
-        if (!allCategories.length) {
-            target.innerHTML = "";
-            return;
-        }
-
-        target.innerHTML =
-            allCategories
-                .map((category) => {
-
-                    const name =
-                        getLocalizedValue(
-                            category,
-                            "name"
-                        );
-
-                    return `
-                        <a
-                            class="category-card"
-                            href="products.html?category=${encodeURIComponent(
-                                category.slug
-                            )}"
-                        >
-
-                            ${
-                                category.image_url
-                                    ? `
-                                        <img
-                                            src="${escapeHTML(
-                                                category.image_url
-                                            )}"
-                                            alt="${escapeHTML(
-                                                name
-                                            )}"
-                                            loading="lazy"
-                                        >
-                                    `
-                                    : ""
-                            }
-
-                            <div class="category-card-content">
-                                <h3>
-                                    ${escapeHTML(
-                                        name
-                                    )}
-                                </h3>
-                            </div>
-
-                        </a>
-                    `;
-                })
-                .join("");
-    }
-
-    /* =========================================================
+    /* =====================================================
        PRODUCT DETAILS
-    ========================================================= */
+    ===================================================== */
 
-    async function loadProductDetails() {
+    async function renderProductDetails() {
+
+        const target =
+            $("#productDetail");
+
+        if (!target) {
+            return;
+        }
+
         const params =
             new URLSearchParams(
                 window.location.search
             );
 
-        const productId =
+        const id =
             params.get("id");
 
         const slug =
             params.get("slug");
 
-        if (!productId && !slug) {
+        if (!id && !slug) {
+
+            target.innerHTML = `
+                <div class="empty-state">
+                    المنتج غير محدد.
+                </div>
+            `;
+
             return;
         }
 
         let product =
-            allProducts.find(
-                (item) =>
-                    item.id === productId
+            products.find(
+                item =>
+                    id &&
+                    String(item.id) ===
+                    String(id)
             );
 
         if (!product && slug) {
+
             product =
-                allProducts.find(
-                    (item) =>
-                        item.slug === slug
+                products.find(
+                    item =>
+                        item.slug ===
+                        slug
                 );
         }
 
         if (!product) {
-            const query =
-                productId
-                    ? STORE_DB
-                          .from("products")
-                          .select(`
-                              *,
-                              categories (
-                                  id,
-                                  slug,
-                                  name_ar,
-                                  name_fr,
-                                  name_en
-                              ),
-                              product_images (
-                                  id,
-                                  storage_path,
-                                  media_type,
-                                  alt_text,
-                                  sort_order,
-                                  is_cover
-                              )
-                          `)
-                          .eq("id", productId)
-                          .eq("is_active", true)
-                          .maybeSingle()
-                    : STORE_DB
-                          .from("products")
-                          .select(`
-                              *,
-                              categories (
-                                  id,
-                                  slug,
-                                  name_ar,
-                                  name_fr,
-                                  name_en
-                              ),
-                              product_images (
-                                  id,
-                                  storage_path,
-                                  media_type,
-                                  alt_text,
-                                  sort_order,
-                                  is_cover
-                              )
-                          `)
-                          .eq("slug", slug)
-                          .eq("is_active", true)
-                          .maybeSingle();
 
-            const { data, error } =
-                await query;
-
-            if (error) {
-                console.error(error);
-                return;
-            }
-
-            product = data;
-        }
-
-        if (!product) {
-            showMessage(
-                "المنتج غير موجود."
-            );
+            target.innerHTML = `
+                <div class="empty-state">
+                    المنتج غير موجود أو لم يعد متاحًا.
+                </div>
+            `;
 
             return;
         }
 
-        currentProduct = product;
-
-        renderProductDetails(product);
-    }
-
-    function renderProductDetails(product) {
         const name =
-            getLocalizedValue(
+            localized(
                 product,
                 "name"
-            ) ||
-            "Product";
+            );
 
         const description =
-            getLocalizedValue(
+            localized(
                 product,
                 "description"
             );
 
         const image =
-            getProductImage(product);
-
-        const titleTarget =
-            $(
-                "[data-product-name], #product-name, .product-name"
+            productImage(
+                product
             );
 
-        const descriptionTarget =
-            $(
-                "[data-product-description], #product-description, .product-description"
+        const stock =
+            Number(
+                product.stock || 0
             );
 
-        const priceTarget =
-            $(
-                "[data-product-price], #product-price, .product-price"
-            );
+        target.innerHTML = `
 
-        const imageTarget =
-            $(
-                "[data-product-image], #product-image, .product-main-image"
-            );
+            <div
+                class="product-detail"
+                style="
+                    display:grid;
+                    grid-template-columns:
+                        minmax(0,1fr)
+                        minmax(0,1fr);
+                    gap:40px;
+                    max-width:1100px;
+                    margin:50px auto;
+                    padding:0 20px;
+                "
+            >
 
-        if (titleTarget) {
-            titleTarget.textContent =
-                name;
-        }
+                <div>
 
-        if (descriptionTarget) {
-            descriptionTarget.innerHTML =
-                escapeHTML(description).replace(
-                    /\n/g,
-                    "<br>"
-                );
-        }
+                    ${
+                        image
+                            ? `
+                                <img
+                                    src="${escapeHTML(image)}"
+                                    alt="${escapeHTML(name)}"
+                                    style="
+                                        width:100%;
+                                        max-height:650px;
+                                        object-fit:cover;
+                                        border-radius:25px;
+                                    "
+                                >
+                            `
+                            : `
+                                <div
+                                    style="
+                                        min-height:500px;
+                                        display:grid;
+                                        place-items:center;
+                                        background:#eee8e1;
+                                        border-radius:25px;
+                                    "
+                                >
+                                    Atelier Noura
+                                </div>
+                            `
+                    }
 
-        if (priceTarget) {
-            priceTarget.textContent =
-                formatPrice(
-                    product.price
-                );
-        }
+                </div>
 
-        if (
-            imageTarget &&
-            image
-        ) {
-            if (
-                imageTarget.tagName === "IMG"
-            ) {
-                imageTarget.src = image;
-                imageTarget.alt = name;
-            } else {
-                imageTarget.innerHTML = `
-                    <img
-                        src="${escapeHTML(image)}"
-                        alt="${escapeHTML(name)}"
+                <div>
+
+                    <span
+                        style="
+                            color:#88796d;
+                            font-size:13px;
+                        "
                     >
-                `;
-            }
-        }
+                        ${escapeHTML(
+                            localized(
+                                product.categories,
+                                "name"
+                            )
+                        )}
+                    </span>
 
-        const addButton =
-            $(
-                "[data-product-add], #product-add-to-cart, .product-add-to-cart"
-            );
+                    <h1>
+                        ${escapeHTML(name)}
+                    </h1>
 
-        if (addButton) {
-            addButton.dataset.addToCart =
-                product.id;
+                    <div
+                        style="
+                            font-size:24px;
+                            font-weight:700;
+                            margin:20px 0;
+                        "
+                    >
+                        ${formatPrice(product.price)}
+                    </div>
 
-            addButton.disabled =
-                Number(product.stock || 0) <= 0;
-        }
+                    <p
+                        style="
+                            line-height:2;
+                            color:#6e665f;
+                        "
+                    >
+                        ${escapeHTML(description)}
+                    </p>
+
+                    ${
+                        stock > 0
+                            ? `
+                                <p>
+                                    المتوفر:
+                                    <strong>
+                                        ${stock}
+                                    </strong>
+                                </p>
+
+                                <div
+                                    style="
+                                        display:flex;
+                                        gap:10px;
+                                        margin-top:20px;
+                                    "
+                                >
+
+                                    <input
+                                        id="product-quantity"
+                                        type="number"
+                                        min="1"
+                                        max="${stock}"
+                                        value="1"
+                                        style="
+                                            width:90px;
+                                            padding:13px;
+                                            border:1px solid #ddd;
+                                            border-radius:12px;
+                                        "
+                                    >
+
+                                    <button
+                                        type="button"
+                                        class="add-to-cart-btn"
+                                        data-product-add="${escapeHTML(product.id)}"
+                                    >
+                                        أضف إلى السلة
+                                    </button>
+
+                                </div>
+                            `
+                            : `
+                                <p>
+                                    هذا المنتج غير متوفر حاليًا.
+                                </p>
+                            `
+                    }
+
+                </div>
+
+            </div>
+        `;
+
+        document.title =
+            `${name} — Atelier Noura`;
     }
 
-    /* =========================================================
-       CART RENDERING
-    ========================================================= */
+    /* =====================================================
+       CART PAGE
+    ===================================================== */
 
     function renderCart() {
+
         const target =
             $(
-                "[data-cart-items], #cart-items, .cart-items"
+                "#cartItems, [data-cart-items]"
             );
 
         if (!target) {
@@ -1048,18 +940,14 @@
             getCart();
 
         if (!cart.length) {
+
             target.innerHTML = `
-                <div class="empty-cart">
-                    <h3>السلة فارغة</h3>
-                    <a href="products.html">
-                        تصفح المنتجات
-                    </a>
+                <div class="empty-state">
+                    السلة فارغة.
                 </div>
             `;
 
-            updateCartSummary(
-                0,
-                0,
+            updateCartTotals(
                 0
             );
 
@@ -1070,13 +958,13 @@
 
         target.innerHTML =
             cart
-                .map((item) => {
+                .map(item => {
 
                     const product =
-                        allProducts.find(
-                            (productItem) =>
-                                productItem.id ===
-                                item.product_id
+                        products.find(
+                            product =>
+                                String(product.id) ===
+                                String(item.product_id)
                         );
 
                     if (!product) {
@@ -1088,189 +976,365 @@
                             item.quantity || 1
                         );
 
-                    const price =
+                    const line =
                         Number(
                             product.price || 0
+                        ) *
+                        quantity;
+
+                    subtotal +=
+                        line;
+
+                    const image =
+                        productImage(
+                            product
                         );
 
-                    const lineTotal =
-                        price * quantity;
-
-                    subtotal += lineTotal;
-
                     const name =
-                        getLocalizedValue(
+                        localized(
                             product,
                             "name"
                         );
 
-                    const image =
-                        getProductImage(
-                            product
-                        );
-
                     return `
+
                         <div
                             class="cart-item"
-                            data-cart-item="${escapeHTML(
-                                product.id
-                            )}"
+                            style="
+                                display:flex;
+                                gap:15px;
+                                align-items:center;
+                                margin-bottom:15px;
+                            "
                         >
 
-                            <div class="cart-item-image">
+                            ${
+                                image
+                                    ? `
+                                        <img
+                                            src="${escapeHTML(image)}"
+                                            alt="${escapeHTML(name)}"
+                                            style="
+                                                width:90px;
+                                                height:100px;
+                                                object-fit:cover;
+                                                border-radius:15px;
+                                            "
+                                        >
+                                    `
+                                    : ""
+                            }
 
-                                ${
-                                    image
-                                        ? `
-                                            <img
-                                                src="${escapeHTML(
-                                                    image
-                                                )}"
-                                                alt="${escapeHTML(
-                                                    name
-                                                )}"
-                                            >
-                                        `
-                                        : ""
-                                }
-
-                            </div>
-
-                            <div class="cart-item-info">
+                            <div
+                                style="
+                                    flex:1;
+                                "
+                            >
 
                                 <h3>
-                                    ${escapeHTML(
-                                        name
-                                    )}
+                                    ${escapeHTML(name)}
                                 </h3>
 
-                                <span>
-                                    ${formatPrice(
-                                        price
-                                    )}
-                                </span>
+                                <p>
+                                    ${formatPrice(product.price)}
+                                </p>
+
+                                <div>
+
+                                    <button
+                                        type="button"
+                                        data-cart-minus="${escapeHTML(product.id)}"
+                                    >
+                                        −
+                                    </button>
+
+                                    <input
+                                        data-cart-quantity="${escapeHTML(product.id)}"
+                                        type="number"
+                                        min="1"
+                                        max="${product.stock}"
+                                        value="${quantity}"
+                                        style="width:55px"
+                                    >
+
+                                    <button
+                                        type="button"
+                                        data-cart-plus="${escapeHTML(product.id)}"
+                                    >
+                                        +
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        data-cart-remove="${escapeHTML(product.id)}"
+                                    >
+                                        حذف
+                                    </button>
+
+                                </div>
 
                             </div>
 
-                            <div class="cart-item-quantity">
-
-                                <button
-                                    type="button"
-                                    data-cart-minus="${escapeHTML(
-                                        product.id
-                                    )}"
-                                >
-                                    −
-                                </button>
-
-                                <input
-                                    type="number"
-                                    min="1"
-                                    value="${quantity}"
-                                    data-cart-quantity="${escapeHTML(
-                                        product.id
-                                    )}"
-                                >
-
-                                <button
-                                    type="button"
-                                    data-cart-plus="${escapeHTML(
-                                        product.id
-                                    )}"
-                                >
-                                    +
-                                </button>
-
-                            </div>
-
-                            <div class="cart-item-total">
-                                ${formatPrice(
-                                    lineTotal
-                                )}
-                            </div>
-
-                            <button
-                                type="button"
-                                class="remove-cart-item"
-                                data-remove-cart="${escapeHTML(
-                                    product.id
-                                )}"
-                            >
-                                حذف
-                            </button>
+                            <strong>
+                                ${formatPrice(line)}
+                            </strong>
 
                         </div>
                     `;
                 })
                 .join("");
 
-        updateCartSummary(
-            subtotal,
-            0,
+        updateCartTotals(
             subtotal
         );
     }
 
-    function updateCartSummary(
-        subtotal,
-        deliveryFee,
-        total
+    function updateCartTotals(
+        subtotal
     ) {
-        const subtotalElements =
-            $$(
-                "[data-cart-subtotal], #cart-subtotal"
+
+        const subtotalElement =
+            $(
+                "#cartSubtotal, [data-cart-subtotal]"
             );
 
-        const deliveryElements =
-            $$(
-                "[data-cart-delivery], #cart-delivery"
+        const totalElement =
+            $(
+                "#cartTotal, [data-cart-total]"
             );
 
-        const totalElements =
-            $$(
-                "[data-cart-total], #cart-total"
+        if (subtotalElement) {
+            subtotalElement.textContent =
+                formatPrice(
+                    subtotal
+                );
+        }
+
+        if (totalElement) {
+            totalElement.textContent =
+                formatPrice(
+                    subtotal
+                );
+        }
+    }
+
+    /* =====================================================
+       CHECKOUT
+    ===================================================== */
+
+    function getCheckoutInputs() {
+
+        return {
+
+            form:
+                $(
+                    "#checkout-form, #order-form"
+                ),
+
+            name:
+                $(
+                    "#customer-name, #customerName, input[name='customer_name']"
+                ),
+
+            phone:
+                $(
+                    "#customer-phone, #customerPhone, input[name='customer_phone']"
+                ),
+
+            email:
+                $(
+                    "#customer-email, #customerEmail, input[name='customer_email']"
+                ),
+
+            wilaya:
+                $(
+                    "#wilaya, select[name='wilaya_code']"
+                ),
+
+            delivery:
+                $(
+                    "#delivery-method, select[name='delivery_method']"
+                ),
+
+            address:
+                $(
+                    "#address, textarea[name='address']"
+                ),
+
+            notes:
+                $(
+                    "#notes, textarea[name='notes']"
+                ),
+
+            message:
+                $(
+                    "#checkout-message"
+                )
+
+        };
+    }
+
+    function showCheckoutMessage(
+        message
+    ) {
+
+        const element =
+            $(
+                "#checkout-message"
             );
 
-        subtotalElements.forEach(
-            (element) => {
-                element.textContent =
-                    formatPrice(subtotal);
-            }
-        );
+        if (!element) {
+            alert(message);
+            return;
+        }
 
-        deliveryElements.forEach(
-            (element) => {
-                element.textContent =
-                    formatPrice(
-                        deliveryFee
-                    );
-            }
-        );
+        element.textContent =
+            message;
 
-        totalElements.forEach(
-            (element) => {
-                element.textContent =
-                    formatPrice(total);
-            }
+        element.classList.add(
+            "show"
         );
     }
 
-    /* =========================================================
-       CHECKOUT - DELIVERY ZONES
-    ========================================================= */
+    function hideCheckoutMessage() {
 
-    function renderDeliveryZones() {
+        $(
+            "#checkout-message"
+        )?.classList.remove(
+            "show"
+        );
+    }
+
+    function validateName(
+        value
+    ) {
+
+        const name =
+            normalizeText(value);
+
+        if (!name) {
+
+            return {
+                valid: false,
+                message:
+                    "الاسم مطلوب."
+            };
+        }
+
+        if (
+            name.length < 2 ||
+            name.length > 60
+        ) {
+
+            return {
+                valid: false,
+                message:
+                    "اكتب اسمًا صحيحًا."
+            };
+        }
+
+        const regex =
+            /^[\p{L}\p{M}]+(?:[\s'-][\p{L}\p{M}]+)*$/u;
+
+        if (!regex.test(name)) {
+
+            return {
+                valid: false,
+                message:
+                    "اكتب اسمًا صحيحًا بدون أرقام أو رموز."
+            };
+        }
+
+        return {
+            valid: true,
+            value: name
+        };
+    }
+
+    function validatePhone(
+        value
+    ) {
+
+        const phone =
+            String(value || "")
+                .trim()
+                .replace(/\s+/g, "");
+
+        const regex =
+            /^(0[567][0-9]{8}|\+213[567][0-9]{8})$/;
+
+        if (!phone) {
+
+            return {
+                valid: false,
+                message:
+                    "رقم الهاتف مطلوب."
+            };
+        }
+
+        if (!regex.test(phone)) {
+
+            return {
+                valid: false,
+                message:
+                    "أدخل رقم هاتف جزائري صحيح مثل 0550123456."
+            };
+        }
+
+        return {
+            valid: true,
+            value: phone
+        };
+    }
+
+    function validateEmail(
+        value
+    ) {
+
+        const email =
+            String(value || "")
+                .trim();
+
+        /*
+           البريد اختياري.
+           الفراغ = صحيح.
+        */
+
+        if (!email) {
+
+            return {
+                valid: true,
+                value: null
+            };
+        }
+
+        const regex =
+            /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+        if (!regex.test(email)) {
+
+            return {
+                valid: false,
+                message:
+                    "إذا أدخلت بريدًا إلكترونيًا، يجب أن يكون صحيحًا مثل example@gmail.com."
+            };
+        }
+
+        return {
+            valid: true,
+            value:
+                email.toLowerCase()
+        };
+    }
+
+    function renderWilayas() {
+
         const select =
-            $(
-                "#wilaya, #customer-wilaya, [name='wilaya'], [data-wilaya]"
-            );
+            $("#wilaya");
 
         if (!select) {
             return;
         }
-
-        const currentValue =
-            select.value;
 
         select.innerHTML = `
             <option value="">
@@ -1279,12 +1343,12 @@
         `;
 
         deliveryZones.forEach(
-            (zone) => {
+            zone => {
 
                 const name =
                     zone.wilaya_name_ar ||
+                    zone.wilaya ||
                     zone.wilaya_name_fr ||
-                    zone.wilaya_name_en ||
                     zone.wilaya_code;
 
                 const option =
@@ -1296,82 +1360,73 @@
                     zone.wilaya_code;
 
                 option.textContent =
-                    `${zone.wilaya_code} - ${name}`;
+                    name;
 
                 select.appendChild(
                     option
                 );
             }
         );
-
-        if (currentValue) {
-            select.value =
-                currentValue;
-        }
-    }
-
-    function getSelectedDeliveryZone() {
-        const select =
-            $(
-                "#wilaya, #customer-wilaya, [name='wilaya'], [data-wilaya]"
-            );
-
-        if (!select) {
-            return null;
-        }
-
-        return (
-            deliveryZones.find(
-                (zone) =>
-                    String(zone.wilaya_code) ===
-                    String(select.value)
-            ) || null
-        );
     }
 
     function getDeliveryMethod() {
-        const select =
-            $(
-                "#delivery-method, #deliveryMethod, [name='delivery_method'], [name='deliveryMethod']"
-            );
 
-        if (select) {
-            return select.value;
-        }
+        return (
+            $("#delivery-method")
+                ?.value ||
+            "home"
+        );
+    }
 
-        const checked =
-            $(
-                'input[name="delivery_method"]:checked, input[name="deliveryMethod"]:checked'
-            );
+    function selectedZone() {
 
-        return checked?.value || "";
+        const code =
+            $("#wilaya")
+                ?.value;
+
+        return deliveryZones.find(
+            zone =>
+                String(
+                    zone.wilaya_code
+                ) ===
+                String(code)
+        );
+    }
+
+    function checkoutSubtotal() {
+
+        return getCart().reduce(
+            (sum, item) => {
+
+                const product =
+                    products.find(
+                        p =>
+                            String(p.id) ===
+                            String(item.product_id)
+                    );
+
+                if (!product) {
+                    return sum;
+                }
+
+                return (
+                    sum +
+                    Number(product.price || 0) *
+                    Number(item.quantity || 0)
+                );
+
+            },
+            0
+        );
     }
 
     function updateCheckoutTotal() {
-        const cart =
-            getCart();
 
-        let subtotal = 0;
-
-        cart.forEach((item) => {
-            const product =
-                allProducts.find(
-                    (productItem) =>
-                        productItem.id ===
-                        item.product_id
-                );
-
-            if (!product) {
-                return;
-            }
-
-            subtotal +=
-                Number(product.price || 0) *
-                Number(item.quantity || 0);
-        });
+        const subtotal =
+            checkoutSubtotal();
 
         const zone =
-            getSelectedDeliveryZone();
+            selectedZone();
 
         const method =
             getDeliveryMethod();
@@ -1379,249 +1434,149 @@
         let deliveryFee = 0;
 
         if (zone) {
-            if (method === "home") {
-                deliveryFee =
-                    Number(
+
+            deliveryFee =
+                method === "office"
+                    ? Number(
+                        zone.office_fee || 0
+                    )
+                    : Number(
                         zone.home_fee || 0
                     );
-            } else if (
-                method === "office"
-            ) {
-                deliveryFee =
-                    Number(
-                        zone.office_fee || 0
-                    );
-            }
         }
 
         const total =
-            subtotal + deliveryFee;
+            subtotal +
+            deliveryFee;
 
-        updateCartSummary(
-            subtotal,
-            deliveryFee,
-            total
-        );
+        const subtotalElement =
+            $("#checkout-subtotal");
+
+        const deliveryElement =
+            $("#checkout-delivery");
+
+        const totalElement =
+            $("#checkout-total");
+
+        if (subtotalElement) {
+            subtotalElement.textContent =
+                formatPrice(
+                    subtotal
+                );
+        }
+
+        if (deliveryElement) {
+            deliveryElement.textContent =
+                formatPrice(
+                    deliveryFee
+                );
+        }
+
+        if (totalElement) {
+            totalElement.textContent =
+                formatPrice(
+                    total
+                );
+        }
     }
 
-    /* =========================================================
-       CHECKOUT VALIDATION
-    ========================================================= */
+    function renderCheckoutItems() {
 
-    function validateCustomerName(name) {
-        const value =
-            normalizeText(name);
+        const target =
+            $("#checkout-items");
 
-        if (!value) {
-            return {
-                valid: false,
-                message:
-                    "الاسم مطلوب."
-            };
+        if (!target) {
+            return;
         }
 
-        if (
-            value.length < 2 ||
-            value.length > 60
-        ) {
-            return {
-                valid: false,
-                message:
-                    "اكتب اسمًا صحيحًا."
-            };
-        }
-
-        /*
-          Supports Arabic, English and French names.
-          Does not allow numbers or random symbols.
-        */
-
-        const nameRegex =
-            /^[\p{L}\p{M}]+(?:[\s'-][\p{L}\p{M}]+)*$/u;
-
-        if (!nameRegex.test(value)) {
-            return {
-                valid: false,
-                message:
-                    "اكتب اسمًا صحيحًا بدون أرقام أو رموز."
-            };
-        }
-
-        return {
-            valid: true,
-            value
-        };
-    }
-
-    function validatePhone(phone) {
-        const value =
-            String(phone || "")
-                .trim()
-                .replace(/\s+/g, "");
-
-        if (!value) {
-            return {
-                valid: false,
-                message:
-                    "رقم الهاتف مطلوب."
-            };
-        }
-
-        /*
-          Accepted Algerian formats:
-
-          0550123456
-          0660123456
-          0770123456
-
-          +213550123456
-          +213660123456
-          +213770123456
-        */
-
-        const phoneRegex =
-            /^(0[567][0-9]{8}|\+213[567][0-9]{8})$/;
-
-        if (!phoneRegex.test(value)) {
-            return {
-                valid: false,
-                message:
-                    "أدخل رقم هاتف جزائري صحيح مثل 0550123456."
-            };
-        }
-
-        return {
-            valid: true,
-            value
-        };
-    }
-
-    function validateEmail(email) {
-        /*
-          IMPORTANT:
-          Email is OPTIONAL.
-        */
-
-        const value =
-            String(email || "").trim();
-
-        if (!value) {
-            return {
-                valid: true,
-                value: ""
-            };
-        }
-
-        const emailRegex =
-            /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-        if (!emailRegex.test(value)) {
-            return {
-                valid: false,
-                message:
-                    "اكتب بريدًا إلكترونيًا صحيحًا مثل example@gmail.com أو اتركه فارغًا."
-            };
-        }
-
-        return {
-            valid: true,
-            value: value.toLowerCase()
-        };
-    }
-
-    /* =========================================================
-       GET CHECKOUT INPUTS
-    ========================================================= */
-
-    function getCheckoutInput(
-        selectors
-    ) {
-        for (const selector of selectors) {
-            const element =
-                $(selector);
-
-            if (element) {
-                return element;
-            }
-        }
-
-        return null;
-    }
-
-    function getCheckoutData() {
-        const nameInput =
-            getCheckoutInput([
-                "#customer-name",
-                "#customerName",
-                "#name",
-                'input[name="customer_name"]',
-                'input[name="customerName"]',
-                'input[name="name"]'
-            ]);
-
-        const emailInput =
-            getCheckoutInput([
-                "#customer-email",
-                "#customerEmail",
-                "#email",
-                'input[name="customer_email"]',
-                'input[name="customerEmail"]',
-                'input[name="email"]'
-            ]);
-
-        const phoneInput =
-            getCheckoutInput([
-                "#customer-phone",
-                "#customerPhone",
-                "#phone",
-                'input[name="customer_phone"]',
-                'input[name="customerPhone"]',
-                'input[name="phone"]'
-            ]);
-
-        const wilayaInput =
-            getCheckoutInput([
-                "#wilaya",
-                "#customer-wilaya",
-                'select[name="wilaya"]',
-                'select[name="wilaya_code"]'
-            ]);
-
-        const addressInput =
-            getCheckoutInput([
-                "#address",
-                "#customer-address",
-                'textarea[name="address"]',
-                'input[name="address"]'
-            ]);
-
-        const notesInput =
-            getCheckoutInput([
-                "#notes",
-                "#customer-notes",
-                'textarea[name="notes"]',
-                'input[name="notes"]'
-            ]);
-
-        return {
-            nameInput,
-            emailInput,
-            phoneInput,
-            wilayaInput,
-            addressInput,
-            notesInput
-        };
-    }
-
-    /* =========================================================
-       BUILD ORDER ITEMS
-    ========================================================= */
-
-    function buildOrderItems() {
         const cart =
             getCart();
 
         if (!cart.length) {
+
+            target.innerHTML = `
+                <div class="checkout-empty">
+                    السلة فارغة.
+                </div>
+            `;
+
+            return;
+        }
+
+        target.innerHTML =
+            cart
+                .map(item => {
+
+                    const product =
+                        products.find(
+                            p =>
+                                String(p.id) ===
+                                String(item.product_id)
+                        );
+
+                    if (!product) {
+                        return "";
+                    }
+
+                    const name =
+                        localized(
+                            product,
+                            "name"
+                        );
+
+                    const image =
+                        productImage(
+                            product
+                        );
+
+                    const quantity =
+                        Number(
+                            item.quantity || 1
+                        );
+
+                    return `
+
+                        <div class="checkout-item">
+
+                            ${
+                                image
+                                    ? `
+                                        <img
+                                            class="checkout-item-image"
+                                            src="${escapeHTML(image)}"
+                                            alt="${escapeHTML(name)}"
+                                        >
+                                    `
+                                    : ""
+                            }
+
+                            <div class="checkout-item-info">
+
+                                <strong>
+                                    ${escapeHTML(name)}
+                                </strong>
+
+                                <div>
+                                    ${quantity} ×
+                                    ${formatPrice(product.price)}
+                                </div>
+
+                            </div>
+
+                        </div>
+                    `;
+
+                })
+                .join("");
+    }
+
+    function buildOrderItems() {
+
+        const cart =
+            getCart();
+
+        if (!cart.length) {
+
             return {
                 valid: false,
                 message:
@@ -1632,32 +1587,25 @@
 
         const items = [];
 
-        for (const cartItem of cart) {
+        for (
+            const cartItem of cart
+        ) {
 
             const product =
-                allProducts.find(
-                    (product) =>
-                        product.id ===
-                        cartItem.product_id
+                products.find(
+                    p =>
+                        String(p.id) ===
+                        String(
+                            cartItem.product_id
+                        )
                 );
 
             if (!product) {
-                return {
-                    valid: false,
-                    message:
-                        "أحد المنتجات في السلة لم يعد متاحًا.",
-                    items: []
-                };
-            }
 
-            if (!product.is_active) {
                 return {
                     valid: false,
                     message:
-                        `المنتج "${getLocalizedValue(
-                            product,
-                            "name"
-                        )}" غير متاح حاليًا.`,
+                        "أحد المنتجات لم يعد متاحًا.",
                     items: []
                 };
             }
@@ -1673,37 +1621,33 @@
                 ) ||
                 quantity <= 0
             ) {
+
                 return {
                     valid: false,
                     message:
-                        "كمية أحد المنتجات غير صحيحة.",
+                        "كمية المنتج غير صحيحة.",
                     items: []
                 };
             }
 
-            const stock =
-                Number(
-                    product.stock || 0
-                );
-
             if (
-                stock < quantity
+                quantity >
+                Number(product.stock || 0)
             ) {
+
                 return {
                     valid: false,
                     message:
-                        `الكمية المطلوبة من "${getLocalizedValue(
-                            product,
-                            "name"
-                        )}" غير متوفرة. المتوفر: ${stock}.`,
+                        `الكمية المطلوبة من "${localized(product, "name")}" غير متوفرة.`,
                     items: []
                 };
             }
 
             items.push({
                 product_id:
-                    product.id,
-                quantity
+                    Number(product.id),
+                quantity:
+                    quantity
             });
         }
 
@@ -1713,345 +1657,218 @@
         };
     }
 
-    /* =========================================================
-       SUBMIT ORDER
-    ========================================================= */
+    async function submitOrder(
+        event
+    ) {
 
-    async function submitOrder(event) {
-        if (event) {
-            event.preventDefault();
-        }
+        event.preventDefault();
 
-        if (!STORE_DB) {
-            showMessage(
-                "تعذر الاتصال بقاعدة البيانات. حاول مرة أخرى."
-            );
+        hideCheckoutMessage();
+
+        const input =
+            getCheckoutInputs();
+
+        if (!input.form) {
             return;
         }
 
-        const inputs =
-            getCheckoutData();
-
-        /* -------------------------
-           NAME
-        ------------------------- */
-
         const nameResult =
-            validateCustomerName(
-                inputs.nameInput?.value
+            validateName(
+                input.name?.value
             );
 
         if (!nameResult.valid) {
-            showMessage(
+
+            showCheckoutMessage(
                 nameResult.message
             );
 
-            inputs.nameInput?.focus();
+            input.name?.focus();
 
             return;
         }
-
-        const customerName =
-            nameResult.value;
-
-
-        /* -------------------------
-           PHONE
-        ------------------------- */
 
         const phoneResult =
             validatePhone(
-                inputs.phoneInput?.value
+                input.phone?.value
             );
 
         if (!phoneResult.valid) {
-            showMessage(
+
+            showCheckoutMessage(
                 phoneResult.message
             );
 
-            inputs.phoneInput?.focus();
+            input.phone?.focus();
 
             return;
         }
-
-        const phone =
-            phoneResult.value;
-
-
-        /* -------------------------
-           EMAIL - OPTIONAL
-        ------------------------- */
 
         const emailResult =
             validateEmail(
-                inputs.emailInput?.value
+                input.email?.value
             );
 
         if (!emailResult.valid) {
-            showMessage(
+
+            showCheckoutMessage(
                 emailResult.message
             );
 
-            inputs.emailInput?.focus();
+            input.email?.focus();
 
             return;
         }
 
-        /*
-          Empty email becomes null.
-          This is intentional.
-        */
+        const zone =
+            selectedZone();
 
-        const customerEmail =
-            emailResult.value || null;
+        if (!zone) {
 
-
-        /* -------------------------
-           WILAYA
-        ------------------------- */
-
-        const wilayaCode =
-            inputs.wilayaInput?.value?.trim() ||
-            "";
-
-        if (!wilayaCode) {
-            showMessage(
+            showCheckoutMessage(
                 "اختر الولاية من فضلك."
             );
 
-            inputs.wilayaInput?.focus();
+            input.wilaya?.focus();
 
             return;
         }
-
-        const selectedZone =
-            deliveryZones.find(
-                (zone) =>
-                    String(zone.wilaya_code) ===
-                    String(wilayaCode)
-            );
-
-        if (!selectedZone) {
-            showMessage(
-                "الولاية المختارة غير متاحة للتوصيل."
-            );
-
-            return;
-        }
-
-
-        /* -------------------------
-           DELIVERY METHOD
-        ------------------------- */
 
         const deliveryMethod =
             getDeliveryMethod();
 
-        if (
-            deliveryMethod !== "home" &&
-            deliveryMethod !== "office"
-        ) {
-            showMessage(
-                "اختر طريقة التوصيل."
-            );
-
-            return;
-        }
-
-
-        /* -------------------------
-           ADDRESS
-        ------------------------- */
-
         const address =
             normalizeText(
-                inputs.addressInput?.value
+                input.address?.value
             );
 
         if (
             deliveryMethod === "home" &&
             address.length < 5
         ) {
-            showMessage(
+
+            showCheckoutMessage(
                 "أدخل عنوانًا صحيحًا للتوصيل إلى المنزل."
             );
 
-            inputs.addressInput?.focus();
+            input.address?.focus();
 
             return;
         }
 
+        const orderItems =
+            buildOrderItems();
 
-        /* -------------------------
-           NOTES
-        ------------------------- */
+        if (!orderItems.valid) {
+
+            showCheckoutMessage(
+                orderItems.message
+            );
+
+            return;
+        }
 
         const notes =
             normalizeText(
-                inputs.notesInput?.value
+                input.notes?.value
             );
 
-
-        /* -------------------------
-           CART
-        ------------------------- */
-
-        const orderItemsResult =
-            buildOrderItems();
-
-        if (!orderItemsResult.valid) {
-            showMessage(
-                orderItemsResult.message
-            );
-
-            return;
-        }
-
-        const items =
-            orderItemsResult.items;
-
-
-        /* -------------------------
-           DISABLE SUBMIT BUTTON
-        ------------------------- */
-
-        const submitButtons =
+        const buttons =
             $$(
-                '#checkout-form button[type="submit"], ' +
-                '#order-form button[type="submit"], ' +
-                '[data-submit-order]'
+                "#checkout-form button[type='submit'], [data-submit-order]"
             );
 
-        submitButtons.forEach(
-            (button) => {
-                button.disabled = true;
+        buttons.forEach(
+            button => {
+
+                button.disabled =
+                    true;
 
                 button.dataset.originalText =
                     button.textContent;
 
                 button.textContent =
                     "جاري إرسال الطلب...";
+
             }
         );
 
-
         try {
 
-            /* -------------------------
-               CALL SUPABASE RPC
-            ------------------------- */
+            const {
+                data,
+                error
+            } = await db.rpc(
+                "place_order",
+                {
+                    p_address:
+                        deliveryMethod === "home"
+                            ? address
+                            : "",
 
-            const { data, error } =
-                await STORE_DB.rpc(
-                    "place_order",
-                    {
-                        p_address:
-                            deliveryMethod === "home"
-                                ? address
-                                : "",
+                    p_customer_email:
+                        emailResult.value,
 
-                        p_customer_email:
-                            customerEmail,
+                    p_customer_name:
+                        nameResult.value,
 
-                        p_customer_name:
-                            customerName,
+                    p_customer_phone:
+                        phoneResult.value,
 
-                        p_customer_phone:
-                            phone,
+                    p_delivery_method:
+                        deliveryMethod,
 
-                        p_delivery_method:
-                            deliveryMethod,
+                    p_items:
+                        orderItems.items,
 
-                        p_items:
-                            items,
+                    p_notes:
+                        notes,
 
-                        p_notes:
-                            notes,
-
-                        p_wilaya_code:
-                            wilayaCode
-                    }
-                );
-
-
-            /* -------------------------
-               RPC ERROR
-            ------------------------- */
+                    p_wilaya_code:
+                        String(
+                            zone.wilaya_code
+                        )
+                }
+            );
 
             if (error) {
+
                 console.error(
-                    "place_order RPC error:",
+                    "place_order error:",
                     error
                 );
 
-                showMessage(
+                showCheckoutMessage(
                     error.message ||
-                    "تعذر إنشاء الطلب. حاول مرة أخرى."
+                    "تعذر إنشاء الطلب."
                 );
 
                 return;
             }
-
-
-            /* -------------------------
-               DATABASE RESPONSE
-            ------------------------- */
 
             if (
                 !data ||
                 data.success !== true
             ) {
+
                 console.error(
                     "Invalid order response:",
                     data
                 );
 
-                showMessage(
-                    "لم يتم إنشاء الطلب. حاول مرة أخرى."
+                showCheckoutMessage(
+                    "لم يتم إنشاء الطلب."
                 );
 
                 return;
             }
 
-
-            /* -------------------------
-               SAVE LAST ORDER
-            ------------------------- */
-
             localStorage.setItem(
                 LAST_ORDER_KEY,
-                JSON.stringify({
-                    id: data.id,
-                    order_number:
-                        data.order_number,
-                    subtotal:
-                        data.subtotal,
-                    delivery_fee:
-                        data.delivery_fee,
-                    total:
-                        data.total,
-                    wilaya_name:
-                        data.wilaya_name,
-                    delivery_method:
-                        data.delivery_method,
-                    status:
-                        data.status,
-                    created_at:
-                        new Date().toISOString()
-                })
+                JSON.stringify(data)
             );
 
-
-            /* -------------------------
-               CLEAR CART
-            ------------------------- */
-
             clearCart();
-
-
-            /* -------------------------
-               SUCCESS REDIRECT
-            ------------------------- */
 
             window.location.href =
                 "order-success.html";
@@ -2059,460 +1876,361 @@
         } catch (error) {
 
             console.error(
-                "Unexpected order error:",
+                "Checkout exception:",
                 error
             );
 
-            showMessage(
+            showCheckoutMessage(
                 error.message ||
-                "حدث خطأ غير متوقع أثناء إرسال الطلب."
+                "حدث خطأ غير متوقع."
             );
 
         } finally {
 
-            submitButtons.forEach(
-                (button) => {
-                    button.disabled = false;
+            buttons.forEach(
+                button => {
 
-                    if (
-                        button.dataset.originalText
-                    ) {
-                        button.textContent =
-                            button.dataset.originalText;
-                    }
+                    button.disabled =
+                        false;
+
+                    button.textContent =
+                        button.dataset.originalText ||
+                        "تأكيد الطلب";
+
                 }
             );
         }
     }
 
-    /* =========================================================
-       ORDER SUCCESS PAGE
-    ========================================================= */
+    /* =====================================================
+       EVENTS
+    ===================================================== */
 
-    function renderOrderSuccess() {
-        const raw =
-            localStorage.getItem(
-                LAST_ORDER_KEY
-            );
-
-        if (!raw) {
-            return;
-        }
-
-        let order;
-
-        try {
-            order =
-                JSON.parse(raw);
-        } catch {
-            return;
-        }
-
-        const numberElements =
-            $$(
-                "[data-order-number], #order-number"
-            );
-
-        const totalElements =
-            $$(
-                "[data-order-total], #order-total"
-            );
-
-        const deliveryElements =
-            $$(
-                "[data-order-delivery], #order-delivery"
-            );
-
-        numberElements.forEach(
-            (element) => {
-                element.textContent =
-                    order.order_number ||
-                    "";
-            }
-        );
-
-        totalElements.forEach(
-            (element) => {
-                element.textContent =
-                    formatPrice(
-                        order.total
-                    );
-            }
-        );
-
-        deliveryElements.forEach(
-            (element) => {
-                element.textContent =
-                    order.delivery_method ===
-                    "home"
-                        ? "توصيل إلى المنزل"
-                        : "توصيل إلى مكتب الاستلام";
-            }
-        );
-    }
-
-    /* =========================================================
-       EVENT HANDLERS
-    ========================================================= */
-
-    function setupGlobalEvents() {
-
-        /* Add to cart */
+    function setupEvents() {
 
         document.addEventListener(
             "click",
-            (event) => {
+            event => {
 
-                const button =
+                const add =
                     event.target.closest(
                         "[data-add-to-cart]"
                     );
 
-                if (!button) {
+                if (add) {
+
+                    addToCart(
+                        add.dataset.addToCart
+                    );
+
                     return;
                 }
 
-                const productId =
-                    button.dataset.addToCart;
-
-                const quantityInput =
-                    $(
-                        "[data-product-quantity], #product-quantity, #quantity"
-                    );
-
-                const quantity =
-                    quantityInput
-                        ? Number(
-                              quantityInput.value
-                          )
-                        : 1;
-
-                addToCart(
-                    productId,
-                    quantity
-                );
-            }
-        );
-
-
-        /* Product page add */
-
-        document.addEventListener(
-            "click",
-            (event) => {
-
-                const button =
+                const productAdd =
                     event.target.closest(
                         "[data-product-add]"
                     );
 
-                if (!button) {
+                if (productAdd) {
+
+                    const quantity =
+                        Number(
+                            $(
+                                "#product-quantity"
+                            )?.value || 1
+                        );
+
+                    addToCart(
+                        productAdd.dataset.productAdd,
+                        quantity
+                    );
+
                     return;
                 }
 
-                const productId =
-                    button.dataset.productAdd;
-
-                const quantityInput =
-                    $(
-                        "[data-product-quantity], #product-quantity, #quantity"
-                    );
-
-                const quantity =
-                    quantityInput
-                        ? Number(
-                              quantityInput.value
-                          )
-                        : 1;
-
-                addToCart(
-                    productId,
-                    quantity
-                );
-            }
-        );
-
-
-        /* Remove cart item */
-
-        document.addEventListener(
-            "click",
-            (event) => {
-
-                const button =
+                const remove =
                     event.target.closest(
-                        "[data-remove-cart]"
+                        "[data-cart-remove]"
                     );
 
-                if (!button) {
+                if (remove) {
+
+                    removeCartItem(
+                        remove.dataset.cartRemove
+                    );
+
                     return;
                 }
 
-                removeCartItem(
-                    button.dataset.removeCart
-                );
-            }
-        );
-
-
-        /* Minus */
-
-        document.addEventListener(
-            "click",
-            (event) => {
-
-                const button =
+                const minus =
                     event.target.closest(
                         "[data-cart-minus]"
                     );
 
-                if (!button) {
+                if (minus) {
+
+                    const item =
+                        getCart().find(
+                            entry =>
+                                String(
+                                    entry.product_id
+                                ) ===
+                                String(
+                                    minus.dataset.cartMinus
+                                )
+                        );
+
+                    if (item) {
+
+                        updateCartItem(
+                            item.product_id,
+                            Number(
+                                item.quantity
+                            ) - 1
+                        );
+                    }
+
                     return;
                 }
 
-                const productId =
-                    button.dataset.cartMinus;
-
-                const cart =
-                    getCart();
-
-                const item =
-                    cart.find(
-                        (cartItem) =>
-                            cartItem.product_id ===
-                            productId
-                    );
-
-                if (!item) {
-                    return;
-                }
-
-                updateCartItem(
-                    productId,
-                    Number(item.quantity) - 1
-                );
-            }
-        );
-
-
-        /* Plus */
-
-        document.addEventListener(
-            "click",
-            (event) => {
-
-                const button =
+                const plus =
                     event.target.closest(
                         "[data-cart-plus]"
                     );
 
-                if (!button) {
-                    return;
+                if (plus) {
+
+                    const item =
+                        getCart().find(
+                            entry =>
+                                String(
+                                    entry.product_id
+                                ) ===
+                                String(
+                                    plus.dataset.cartPlus
+                                )
+                        );
+
+                    if (item) {
+
+                        updateCartItem(
+                            item.product_id,
+                            Number(
+                                item.quantity
+                            ) + 1
+                        );
+                    }
                 }
-
-                const productId =
-                    button.dataset.cartPlus;
-
-                const cart =
-                    getCart();
-
-                const item =
-                    cart.find(
-                        (cartItem) =>
-                            cartItem.product_id ===
-                            productId
-                    );
-
-                if (!item) {
-                    return;
-                }
-
-                updateCartItem(
-                    productId,
-                    Number(item.quantity) + 1
-                );
             }
         );
 
-
-        /* Quantity input */
-
         document.addEventListener(
             "change",
-            (event) => {
+            event => {
 
-                const input =
+                const quantity =
                     event.target.closest(
                         "[data-cart-quantity]"
                     );
 
-                if (!input) {
+                if (quantity) {
+
+                    updateCartItem(
+                        quantity.dataset.cartQuantity,
+                        Number(
+                            quantity.value
+                        )
+                    );
+
                     return;
                 }
 
-                updateCartItem(
-                    input.dataset.cartQuantity,
-                    Number(input.value)
-                );
+                if (
+                    event.target.matches(
+                        "#wilaya, #delivery-method"
+                    )
+                ) {
+
+                    updateCheckoutTotal();
+
+                    if (
+                        event.target.id ===
+                        "delivery-method"
+                    ) {
+                        toggleAddress();
+                    }
+                }
             }
         );
 
-
-        /* Checkout form */
-
-        const checkoutForm =
+        const checkout =
             $(
-                "#checkout-form, #order-form, form[data-checkout]"
+                "#checkout-form, #order-form"
             );
 
-        if (checkoutForm) {
-            checkoutForm.addEventListener(
+        if (checkout) {
+
+            checkout.addEventListener(
                 "submit",
                 submitOrder
             );
         }
-
-
-        /* Delivery changes */
-
-        document.addEventListener(
-            "change",
-            (event) => {
-
-                if (
-                    event.target.matches(
-                        "#wilaya, #customer-wilaya, [name='wilaya'], [name='wilaya_code'], #delivery-method, #deliveryMethod, [name='delivery_method'], [name='deliveryMethod'], input[name='delivery_method'], input[name='deliveryMethod']"
-                    )
-                ) {
-                    updateCheckoutTotal();
-                }
-            }
-        );
     }
 
-    /* =========================================================
+    function toggleAddress() {
+
+        const method =
+            getDeliveryMethod();
+
+        const group =
+            $("#address-group");
+
+        const address =
+            $("#address");
+
+        if (!group) {
+            return;
+        }
+
+        if (method === "home") {
+
+            group.style.display =
+                "block";
+
+            if (address) {
+                address.required =
+                    true;
+            }
+
+        } else {
+
+            group.style.display =
+                "none";
+
+            if (address) {
+                address.required =
+                    false;
+
+                address.value = "";
+            }
+        }
+    }
+
+    /* =====================================================
        REALTIME
-    ========================================================= */
+    ===================================================== */
 
     function setupRealtime() {
-        if (!STORE_DB) {
+
+        if (!db) {
             return;
         }
 
-        try {
+        db
+            .channel(
+                "atelier-noura-store"
+            )
+            .on(
+                "postgres_changes",
+                {
+                    event: "*",
+                    schema: "public",
+                    table: "products"
+                },
+                async () => {
 
-            STORE_DB
-                .channel(
-                    "atelier-noura-products"
-                )
-                .on(
-                    "postgres_changes",
-                    {
-                        event: "*",
-                        schema: "public",
-                        table: "products"
-                    },
-                    async () => {
-
-                        await loadProducts();
-
-                        renderFeaturedProducts();
-                        renderNewArrivals();
-                        renderProducts();
-                        renderCart();
-
-                    }
-                )
-                .on(
-                    "postgres_changes",
-                    {
-                        event: "*",
-                        schema: "public",
-                        table: "product_images"
-                    },
-                    async () => {
+                    try {
 
                         await loadProducts();
 
-                        renderFeaturedProducts();
-                        renderNewArrivals();
                         renderProducts();
+                        renderFeatured();
                         renderCart();
+                        renderCheckoutItems();
+                        updateCheckoutTotal();
 
+                    } catch (error) {
+
+                        console.error(
+                            error
+                        );
                     }
-                )
-                .subscribe();
+                }
+            )
+            .on(
+                "postgres_changes",
+                {
+                    event: "*",
+                    schema: "public",
+                    table: "product_images"
+                },
+                async () => {
 
-        } catch (error) {
+                    try {
 
-            console.error(
-                "Realtime initialization error:",
-                error
+                        await loadProducts();
+
+                        renderProducts();
+                        renderFeatured();
+                        renderCart();
+                        renderCheckoutItems();
+
+                    } catch (error) {
+
+                        console.error(
+                            error
+                        );
+                    }
+                }
+            )
+            .subscribe(
+                status => {
+                    console.log(
+                        "Realtime:",
+                        status
+                    );
+                }
             );
-        }
     }
 
-    /* =========================================================
-       CHECKOUT INITIALIZATION
-    ========================================================= */
+    /* =====================================================
+       INITIALIZATION
+    ===================================================== */
 
-    async function initializeCheckout() {
-        const checkoutForm =
-            $(
-                "#checkout-form, #order-form, form[data-checkout]"
-            );
-
-        if (!checkoutForm) {
-            return;
-        }
-
-        await loadDeliveryZones();
-
-        renderDeliveryZones();
-
-        renderCart();
-
-        updateCheckoutTotal();
-    }
-
-    /* =========================================================
-       PAGE INITIALIZATION
-    ========================================================= */
-
-    async function initializeApp() {
-
-        updateCartCounter();
-
-        setupGlobalEvents();
+    async function initialize() {
 
         try {
 
-            await initializeSupabase();
+            initializeDatabase();
 
-            if (!STORE_DB) {
-                console.error(
-                    "Supabase client was not initialized."
-                );
+            await loadProducts();
 
-                return;
-            }
+            await loadCategories();
 
-            await Promise.all([
-                loadProducts(),
-                loadCategories()
-            ]);
+            await loadDeliveryZones();
 
-            renderFeaturedProducts();
-            renderNewArrivals();
+            updateCartCount();
+
             renderProducts();
-            renderCategories();
+
+            renderFeatured();
+
             renderCart();
 
-            await loadProductDetails();
+            await renderProductDetails();
 
-            await initializeCheckout();
+            if ($("#wilaya")) {
 
-            renderOrderSuccess();
+                renderWilayas();
+
+                renderCheckoutItems();
+
+                updateCheckoutTotal();
+
+                toggleAddress();
+            }
+
+            setupEvents();
 
             setupRealtime();
 
@@ -2522,23 +2240,28 @@
                 "Atelier Noura initialization error:",
                 error
             );
+
+            const detail =
+                $("#productDetail");
+
+            if (detail) {
+
+                detail.innerHTML = `
+                    <div class="empty-state">
+                        حدث خطأ في الاتصال بقاعدة البيانات.
+                        <br>
+                        ${escapeHTML(
+                            error.message
+                        )}
+                    </div>
+                `;
+            }
         }
     }
 
-    /* =========================================================
-       START
-    ========================================================= */
-
-    if (
-        document.readyState ===
-        "loading"
-    ) {
-        document.addEventListener(
-            "DOMContentLoaded",
-            initializeApp
-        );
-    } else {
-        initializeApp();
-    }
+    document.addEventListener(
+        "DOMContentLoaded",
+        initialize
+    );
 
 })();
