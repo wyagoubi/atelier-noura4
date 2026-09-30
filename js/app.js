@@ -2165,25 +2165,72 @@ async function initCheckout() {
         );
 
 
-      if (!customerName) {
+      /* =========================================================
+         CLIENT-SIDE VALIDATION
+         Server-side validation is also performed by place_order().
+         ========================================================= */
+
+      if (!customerName || customerName.length < 3) {
 
         alert(
-          "اكتب اسمك."
+          "اكتب اسمًا صحيحًا."
         );
 
         return;
       }
 
 
-      if (!customerPhone) {
+      /* ---------------------------------------------------------
+         EMAIL VALIDATION
+         --------------------------------------------------------- */
+
+      const emailPattern =
+        /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+
+      if (!emailPattern.test(customerEmail)) {
 
         alert(
-          "اكتب رقم الهاتف."
+          "اكتب بريدًا إلكترونيًا صحيحًا مثل example@gmail.com."
         );
 
         return;
       }
 
+
+      /* ---------------------------------------------------------
+         ALGERIAN PHONE VALIDATION
+         0550123456
+         0661234567
+         0771234567
+         +213551234567
+         +213661234567
+         +213771234567
+         --------------------------------------------------------- */
+
+      const phoneNormalized =
+        customerPhone
+          .replace(/\s+/g, "")
+          .replace(/-/g, "");
+
+
+      const algeriaPhonePattern =
+        /^(0[567][0-9]{8}|\+213[567][0-9]{8})$/;
+
+
+      if (!algeriaPhonePattern.test(phoneNormalized)) {
+
+        alert(
+          "اكتب رقم هاتف جزائري صحيح، مثل 0550123456 أو +213551234567."
+        );
+
+        return;
+      }
+
+
+      /* ---------------------------------------------------------
+         WILAYA
+         --------------------------------------------------------- */
 
       if (!wilayaCode) {
 
@@ -2195,33 +2242,144 @@ async function initCheckout() {
       }
 
 
+      /* ---------------------------------------------------------
+         DELIVERY METHOD
+         --------------------------------------------------------- */
+
       if (
-        deliveryMethod ===
-        "home"
-        &&
-        !address
+        deliveryMethod !== "home" &&
+        deliveryMethod !== "office"
       ) {
 
         alert(
-          "اكتب عنوان التوصيل."
+          "اختر طريقة توصيل صحيحة."
         );
 
         return;
       }
 
 
-      const items =
-        cart.map(
-          item => ({
-            product_id:
-              item.id,
+      /* ---------------------------------------------------------
+         HOME ADDRESS
+         --------------------------------------------------------- */
 
-            quantity:
-              Number(
-                item.qty
-              )
-          })
+      if (
+        deliveryMethod === "home" &&
+        address.length < 5
+      ) {
+
+        alert(
+          "اكتب عنوان التوصيل بشكل صحيح."
         );
+
+        return;
+      }
+
+
+      /* ---------------------------------------------------------
+         BUILD ORDER ITEMS
+         --------------------------------------------------------- */
+
+      const items =
+        cart
+          .map(
+            item => ({
+
+              product_id:
+                item.id,
+
+              quantity:
+                Math.max(
+                  1,
+                  Math.min(
+                    99,
+                    Number(
+                      item.qty || 1
+                    )
+                  )
+                )
+
+            })
+          )
+          .filter(
+            item =>
+              item.product_id &&
+              Number.isFinite(item.quantity) &&
+              item.quantity > 0
+          );
+
+
+      if (!items.length) {
+
+        alert(
+          "لا توجد منتجات صالحة في السلة."
+        );
+
+        return;
+      }
+
+
+      /* ---------------------------------------------------------
+         VERIFY PRODUCTS BEFORE SENDING
+         The database remains the final authority.
+         --------------------------------------------------------- */
+
+      for (const item of items) {
+
+        const product =
+          PRODUCTS.find(
+            product =>
+              String(product.id) ===
+              String(item.product_id)
+          );
+
+
+        if (!product) {
+
+          alert(
+            "أحد المنتجات في السلة لم يعد متاحًا. حدّث الصفحة."
+          );
+
+          await loadProducts();
+
+          initCart();
+
+          return;
+        }
+
+
+        if (!product.is_active) {
+
+          alert(
+            `المنتج "${productName(product)}" لم يعد متاحًا.`
+          );
+
+          await loadProducts();
+
+          initCart();
+
+          return;
+        }
+
+
+        const stock =
+          Number(
+            product.stock ?? 0
+          );
+
+
+        if (
+          Number.isFinite(stock) &&
+          stock < item.quantity
+        ) {
+
+          alert(
+            `الكمية المطلوبة من "${productName(product)}" غير متوفرة.`
+          );
+
+          return;
+        }
+      }
 
 
       const button =
@@ -2235,12 +2393,20 @@ async function initCheckout() {
         button.disabled =
           true;
 
+        button.dataset.originalText =
+          button.textContent;
+
         button.textContent =
           "جاري إرسال الطلب...";
       }
 
 
       try {
+
+        /* -------------------------------------------------------
+           IMPORTANT:
+           These names MUST match public.place_order().
+           ------------------------------------------------------- */
 
         const {
           data,
@@ -2250,35 +2416,56 @@ async function initCheckout() {
             "place_order",
             {
 
-              p_customer_name:
-                customerName,
+              p_address:
+                deliveryMethod === "home"
+                  ? address
+                  : "",
 
               p_customer_email:
                 customerEmail,
 
-              p_customer_phone:
-                customerPhone,
+              p_customer_name:
+                customerName,
 
-              p_wilaya_code:
-                wilayaCode,
+              p_customer_phone:
+                phoneNormalized,
 
               p_delivery_method:
                 deliveryMethod,
 
-              p_address:
-                address,
+              p_items:
+                items,
 
               p_notes:
                 notes,
 
-              p_items:
-                items
+              p_wilaya_code:
+                wilayaCode
+
             }
           );
 
 
-        if (error)
-          throw error;
+        if (error) {
+
+          console.error(
+            "place_order error:",
+            error
+          );
+
+          throw new Error(
+            error.message ||
+            "تعذر إنشاء الطلب."
+          );
+        }
+
+
+        if (!data) {
+
+          throw new Error(
+            "تم الاتصال بقاعدة البيانات لكن لم يتم إنشاء الطلب."
+          );
+        }
 
 
         const order =
@@ -2287,24 +2474,68 @@ async function initCheckout() {
             : data;
 
 
+        if (
+          !order ||
+          !order.order_number
+        ) {
+
+          console.error(
+            "Unexpected place_order response:",
+            data
+          );
+
+          throw new Error(
+            "تم إنشاء الطلب بشكل غير متوقع. تحقق من جدول orders في Supabase."
+          );
+        }
+
+
+        /* -------------------------------------------------------
+           SAVE LAST ORDER FOR SUCCESS PAGE
+           ------------------------------------------------------- */
+
         localStorage.setItem(
           "lastOrder",
-          order.order_number
+          String(
+            order.order_number
+          )
         );
 
 
         localStorage.setItem(
           "lastOrderTotal",
           String(
-            order.total
+            order.total ?? 0
           )
         );
 
+
+        if (order.id) {
+
+          localStorage.setItem(
+            "lastOrderId",
+            String(
+              order.id
+            )
+          );
+        }
+
+
+        /* -------------------------------------------------------
+           EMPTY CART ONLY AFTER SUCCESS
+           ------------------------------------------------------- */
 
         localStorage.removeItem(
           "cart"
         );
 
+
+        updateCartCount();
+
+
+        /* -------------------------------------------------------
+           GO TO SUCCESS PAGE
+           ------------------------------------------------------- */
 
         location.href =
           "order-success.html";
@@ -2312,9 +2543,30 @@ async function initCheckout() {
 
       } catch (error) {
 
+        console.error(
+          "Atelier Noura order error:",
+          error
+        );
+
+
+        let message =
+          error?.message ||
+          "تعذر إرسال الطلب.";
+
+
+        if (
+          message
+            .toLowerCase()
+            .includes("schema cache")
+        ) {
+
+          message =
+            "قاعدة البيانات لا تزال تستخدم نسخة قديمة من place_order. شغّل SQL الخاص بـ place_order في Supabase ثم انتظر لحظات وأعد المحاولة.";
+        }
+
+
         alert(
-          error.message ||
-          "تعذر إرسال الطلب."
+          message
         );
 
 
@@ -2324,6 +2576,7 @@ async function initCheckout() {
             false;
 
           button.textContent =
+            button.dataset.originalText ||
             "تأكيد الطلب";
         }
       }
