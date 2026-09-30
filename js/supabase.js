@@ -4,7 +4,7 @@
 
 window.SUPABASE_CONFIG = {
   url: "https://rjhdfzwsmsijpwfqglxn.supabase.co",
-  anonKey: "YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY"
+  anonKey: "sb_publishable_Xlg_hV8utl8IXbkWWW_eMw_jW7Nmmmz"
 };
 
 window.supabaseClient = null;
