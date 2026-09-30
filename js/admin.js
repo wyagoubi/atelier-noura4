@@ -1,59 +1,38 @@
 const BUCKET = "product-media";
 
 let db = null;
-
 let categories = [];
-
 let products = [];
-
 let currentTab = "overview";
+let realtimeChannel = null;
 
+const $ = id => document.getElementById(id);
 
-const $ = id =>
-  document.getElementById(id);
-
-
-
-function configured(){
-
-  return typeof isSupabaseConfigured === "function"
-    && isSupabaseConfigured();
-
-}
-
-
-
-function money(value){
-
+function money(value) {
   return new Intl.NumberFormat("fr-DZ")
-    .format(Number(value || 0))
-    + " DA";
-
+    .format(Number(value || 0)) + " DA";
 }
 
-
-
-function escapeHtml(value = ""){
-
+function escapeHtml(value = "") {
   return String(value).replace(
     /[&<>'"]/g,
-
     c => ({
-      "&":"&amp;",
-      "<":"&lt;",
-      ">":"&gt;",
-      "'":"&#39;",
-      '"':"&quot;"
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "'": "&#39;",
+      '"': "&quot;"
     }[c])
   );
-
 }
 
+function configured() {
+  return typeof isSupabaseConfigured === "function"
+    && isSupabaseConfigured();
+}
 
-
-function message(el,text,error=false){
-
-  if(!el) return;
+function message(el, text, error = false) {
+  if (!el) return;
 
   el.textContent = text || "";
 
@@ -63,44 +42,35 @@ function message(el,text,error=false){
   );
 
   el.style.background =
-    error
-      ? "#f9e6e6"
-      : "#f5eee8";
+    error ? "#f9e6e6" : "#f5eee8";
 
   el.style.color =
-    error
-      ? "#8d2525"
-      : "#5e5148";
-
+    error ? "#8d2525" : "#5e5148";
 }
 
 
+/* ============================================================
+   AUTH
+============================================================ */
 
-async function getSession(){
+async function getSession() {
 
   const {
     data,
     error
   } = await db.auth.getSession();
 
-  if(error) throw error;
+  if (error) throw error;
 
   return data.session;
-
 }
 
 
+async function ensureOwner() {
 
-async function ensureOwner(){
+  const session = await getSession();
 
-  const session =
-    await getSession();
-
-
-  if(!session) {
-    return false;
-  }
-
+  if (!session) return false;
 
   const {
     data,
@@ -108,72 +78,60 @@ async function ensureOwner(){
   } = await db
     .from("profiles")
     .select("role,full_name")
-    .eq("id",session.user.id)
+    .eq("id", session.user.id)
     .maybeSingle();
 
-
-  if(error) throw error;
-
+  if (error) throw error;
 
   return data?.role === "owner";
-
 }
 
 
+async function showDashboard() {
 
-async function showDashboard(){
+  $("loginView").style.display = "none";
 
-  $("loginView").style.display =
-    "none";
+  $("dashboardView").style.display = "grid";
 
+  $("logoutBtn").style.display = "inline-block";
 
-  $("dashboardView").style.display =
-    "grid";
-
-
-  $("logoutBtn").style.display =
-    "inline-block";
-
-
-  const session =
-    await getSession();
-
+  const session = await getSession();
 
   $("ownerEmail").textContent =
     session?.user?.email || "";
 
-
   await loadBaseData();
-
 
   await renderTab("overview");
 
+  subscribeOwnerRealtime();
 }
 
 
+function showLogin() {
 
-function showLogin(){
+  $("loginView").style.display = "block";
 
-  $("loginView").style.display =
-    "block";
+  $("dashboardView").style.display = "none";
 
+  $("logoutBtn").style.display = "none";
 
-  $("dashboardView").style.display =
-    "none";
+  $("ownerEmail").textContent = "";
 
+  if (realtimeChannel) {
 
-  $("logoutBtn").style.display =
-    "none";
+    db.removeChannel(realtimeChannel);
 
-
-  $("ownerEmail").textContent =
-    "";
-
+    realtimeChannel = null;
+  }
 }
 
 
+/* ============================================================
+   DATA
+============================================================ */
 
-async function loadBaseData(){
+async function loadBaseData() {
 
   const [
     catRes,
@@ -183,175 +141,234 @@ async function loadBaseData(){
     db
       .from("categories")
       .select("*")
-      .order("id"),
+      .eq("is_active", true)
+      .order("sort_order"),
 
     db
       .from("products")
-      .select("*,categories(*)")
+      .select(
+        "*,categories(*),product_images(*)"
+      )
       .order(
         "created_at",
-        {ascending:false}
+        { ascending: false }
       )
 
   ]);
 
-
-  if(catRes.error)
+  if (catRes.error)
     throw catRes.error;
 
-
-  if(productRes.error)
+  if (productRes.error)
     throw productRes.error;
-
 
   categories =
     catRes.data || [];
 
-
   products =
     productRes.data || [];
-
 }
 
 
-
-function productImage(product){
-
-  const image =
-    product.product_images?.find(
-      x => x.is_cover
-    )
-    ||
-    product.product_images?.[0];
-
-
-  if(!image){
-
-    return `
-      <div class="admin-thumb">
-        NO IMAGE
-      </div>
-    `;
-
-  }
-
-
-  const url =
-    db
-      .storage
-      .from(BUCKET)
-      .getPublicUrl(
-        image.storage_path
-      )
-      .data
-      .publicUrl;
-
-
-  return `
-
-    <div class="admin-thumb">
-
-      <img
-        src="${url}"
-        alt="${escapeHtml(
-          product.name_en ||
-          product.name_ar
-        )}"
-      >
-
-    </div>
-
-  `;
-
-}
-
-
-
-async function refreshProducts(){
+async function refreshProducts() {
 
   const {
     data,
     error
   } = await db
-
     .from("products")
-
     .select(
       "*,categories(*),product_images(*)"
     )
-
     .order(
       "created_at",
-      {ascending:false}
+      { ascending: false }
     );
 
-
-  if(error)
+  if (error)
     throw error;
 
-
-  products =
-    data || [];
-
+  products = data || [];
 }
 
 
+/* ============================================================
+   REALTIME OWNER
+============================================================ */
 
-async function renderTab(tab){
+function subscribeOwnerRealtime() {
+
+  if (!db) return;
+
+  if (realtimeChannel) {
+
+    db.removeChannel(
+      realtimeChannel
+    );
+  }
+
+  realtimeChannel =
+    db
+      .channel("atelier-noura-owner")
+
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "orders"
+        },
+        async payload => {
+
+          showNewOrderToast(
+            payload.eventType === "INSERT"
+          );
+
+          if (
+            currentTab === "orders"
+            || currentTab === "overview"
+          ) {
+
+            await renderTab(
+              currentTab
+            );
+          }
+        }
+      )
+
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "products"
+        },
+        async () => {
+
+          await refreshProducts();
+
+          if (
+            currentTab === "products"
+            || currentTab === "overview"
+          ) {
+
+            await renderTab(
+              currentTab
+            );
+          }
+        }
+      )
+
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "product_images"
+        },
+        async () => {
+
+          await refreshProducts();
+
+          if (
+            currentTab === "products"
+            || currentTab === "overview"
+          ) {
+
+            await renderTab(
+              currentTab
+            );
+          }
+        }
+      )
+
+      .subscribe();
+}
+
+
+function showNewOrderToast(isNew) {
+
+  if (!isNew) return;
+
+  document.title =
+    "🔔 طلب جديد — Atelier Noura";
+
+  const toast =
+    document.createElement("div");
+
+  toast.style.cssText = `
+    position:fixed;
+    top:22px;
+    right:22px;
+    z-index:99999;
+    background:#201b17;
+    color:white;
+    padding:18px 22px;
+    border-radius:18px;
+    box-shadow:0 20px 60px rgba(0,0,0,.2);
+    font-family:Cairo,sans-serif;
+    direction:rtl;
+  `;
+
+  toast.innerHTML = `
+    <strong>🔔 طلب جديد</strong>
+    <div style="font-size:12px;margin-top:5px">
+      وصل طلب جديد إلى المتجر.
+    </div>
+  `;
+
+  document.body.appendChild(toast);
+
+  setTimeout(() => {
+    toast.remove();
+    document.title =
+      "Owner Studio — Atelier Noura";
+  }, 6000);
+}
+
+
+/* ============================================================
+   DASHBOARD
+============================================================ */
+
+async function renderTab(tab) {
 
   currentTab = tab;
 
-
-  const root =
-    $("adminApp");
-
+  const root = $("adminApp");
 
   root.innerHTML = `
-
     <div class="empty-admin">
-
       جاري التحميل...
-
     </div>
-
   `;
 
+  try {
 
-  try{
-
-    if(tab === "overview")
+    if (tab === "overview")
       await renderOverview(root);
 
-
-    if(tab === "products")
+    if (tab === "products")
       await renderProducts(root);
 
-
-    if(tab === "orders")
+    if (tab === "orders")
       await renderOrders(root);
 
-
-    if(tab === "delivery")
+    if (tab === "delivery")
       await renderDelivery(root);
 
-
-    if(tab === "media")
+    if (tab === "media")
       await renderMedia(root);
 
-
-    if(tab === "settings")
+    if (tab === "settings")
       await renderSettings(root);
 
-
-  }catch(error){
+  } catch (error) {
 
     root.innerHTML = `
-
       <div class="admin-card">
 
-        <h2>
-          حدث خطأ
-        </h2>
+        <h2>حدث خطأ</h2>
 
         <p>
           ${escapeHtml(
@@ -360,51 +377,46 @@ async function renderTab(tab){
         </p>
 
       </div>
-
     `;
-
   }
-
 }
 
 
-
-async function renderOverview(root){
+async function renderOverview(root) {
 
   const {
-    count:orderCount,
-    error:orderError
-  } =
-    await db
-      .from("orders")
-      .select(
-        "id",
-        {
-          count:"exact",
-          head:true
-        }
-      );
+    count: orderCount,
+    error: orderError
+  } = await db
+    .from("orders")
+    .select(
+      "id",
+      {
+        count: "exact",
+        head: true
+      }
+    );
 
-
-  if(orderError)
+  if (orderError)
     throw orderError;
 
 
-  const newOrders =
-    await db
-      .from("orders")
-      .select(
-        "id",
-        {
-          count:"exact",
-          head:true
-        }
-      )
-      .eq("status","new");
+  const {
+    count: newCount,
+    error: newError
+  } = await db
+    .from("orders")
+    .select(
+      "id",
+      {
+        count: "exact",
+        head: true
+      }
+    )
+    .eq("status", "new");
 
-
-  if(newOrders.error)
-    throw newOrders.error;
+  if (newError)
+    throw newError;
 
 
   root.innerHTML = `
@@ -423,17 +435,12 @@ async function renderOverview(root){
 
       </div>
 
-
-      <div class="admin-toolbar-actions">
-
-        <button
-          class="admin-primary"
-          data-open-product
-        >
-          + إضافة منتج
-        </button>
-
-      </div>
+      <button
+        class="admin-primary"
+        data-open-product
+      >
+        + إضافة منتج
+      </button>
 
     </div>
 
@@ -441,50 +448,22 @@ async function renderOverview(root){
     <div class="stats">
 
       <div class="stat">
-
-        <span>
-          Products
-        </span>
-
-        <b>
-          ${products.length}
-        </b>
-
+        <span>Products</span>
+        <b>${products.length}</b>
       </div>
 
-
       <div class="stat">
-
-        <span>
-          Orders
-        </span>
-
-        <b>
-          ${orderCount || 0}
-        </b>
-
+        <span>Orders</span>
+        <b>${orderCount || 0}</b>
       </div>
 
-
       <div class="stat">
-
-        <span>
-          New orders
-        </span>
-
-        <b>
-          ${newOrders.count || 0}
-        </b>
-
+        <span>New orders</span>
+        <b>${newCount || 0}</b>
       </div>
 
-
       <div class="stat">
-
-        <span>
-          Active products
-        </span>
-
+        <span>Active products</span>
         <b>
           ${
             products.filter(
@@ -492,7 +471,6 @@ async function renderOverview(root){
             ).length
           }
         </b>
-
       </div>
 
     </div>
@@ -500,19 +478,15 @@ async function renderOverview(root){
 
     <div class="admin-grid">
 
-
       <div class="admin-card">
 
         <h3>
-          إدارة المنتجات
+          المنتجات
         </h3>
 
         <p>
-
-          غيّر السعر، المخزون،
-          الوصف، الصور والتصنيف
-          بدون تعديل الكود.
-
+          أضف المنتجات والأسعار
+          والصور والفيديوهات والمخزون.
         </p>
 
         <button
@@ -532,11 +506,8 @@ async function renderOverview(root){
         </h3>
 
         <p>
-
-          كل طلب جديد يصل إلى
-          قاعدة البيانات ويظهر هنا
-          مع بيانات الزبون والتوصيل.
-
+          الطلبات الجديدة تظهر تلقائيًا
+          عند وصولها.
         </p>
 
         <button
@@ -552,17 +523,17 @@ async function renderOverview(root){
 
   `;
 
-
   bindInlineActions();
-
 }
 
 
+/* ============================================================
+   PRODUCTS
+============================================================ */
 
-async function renderProducts(root){
+async function renderProducts(root) {
 
   await refreshProducts();
-
 
   root.innerHTML = `
 
@@ -580,63 +551,39 @@ async function renderProducts(root){
 
       </div>
 
-
-      <div class="admin-toolbar-actions">
-
-        <button
-          class="admin-primary"
-          data-open-product
-        >
-          + إضافة منتج
-        </button>
-
-      </div>
+      <button
+        class="admin-primary"
+        data-open-product
+      >
+        + إضافة منتج
+      </button>
 
     </div>
 
 
     <div class="admin-card">
 
-
-      <div
-        class="admin-grid"
-        style="margin-bottom:18px"
+      <input
+        class="admin-search"
+        id="productSearch"
+        placeholder="ابحث عن منتج..."
       >
 
-        <input
-          class="admin-search"
-          id="productSearch"
-          placeholder="ابحث عن منتج..."
-        >
-
-        <div></div>
-
-      </div>
-
-
-      <div id="productAdminList">
+      <div
+        id="productAdminList"
+        style="margin-top:20px"
+      >
 
         ${
           products.length
-
-          ?
-
-          products
-            .map(productRow)
-            .join("")
-
-          :
-
-          `
-
-          <div class="empty-admin">
-
-            لا توجد منتجات.
-            أضف أول منتج.
-
-          </div>
-
-          `
+            ? products
+                .map(productRow)
+                .join("")
+            : `
+              <div class="empty-admin">
+                لا توجد منتجات بعد.
+              </div>
+            `
         }
 
       </div>
@@ -644,7 +591,6 @@ async function renderProducts(root){
     </div>
 
   `;
-
 
   bindInlineActions();
 
@@ -659,7 +605,6 @@ async function renderProducts(root){
             .trim()
             .toLowerCase();
 
-
         document
           .querySelectorAll(
             "[data-product-row]"
@@ -669,28 +614,132 @@ async function renderProducts(root){
             row.style.display =
               row.dataset.search
                 .includes(q)
-
-              ? "grid"
-
-              : "none";
-
+                  ? "grid"
+                  : "none";
           });
-
       }
     );
-
 }
 
 
-
-function productRow(p){
+function productRow(p) {
 
   const cat =
     p.categories?.name_ar
-    ||
-    p.category_id
-    ||
-    "—";
+    || "بدون تصنيف";
+
+  const media =
+    p.product_images || [];
+
+  const mediaCount =
+    media.length;
+
+  const mediaHtml =
+    media.map(m => {
+
+      const url =
+        publicUrl(
+          m.storage_path
+        );
+
+      if (
+        m.media_type === "video"
+      ) {
+
+        return `
+          <div
+            style="
+              position:relative;
+              width:72px;
+              height:90px;
+              border-radius:12px;
+              overflow:hidden;
+              background:#ddd;
+            "
+          >
+
+            <video
+              src="${url}"
+              muted
+              preload="metadata"
+              style="
+                width:100%;
+                height:100%;
+                object-fit:cover;
+              "
+            ></video>
+
+            <button
+              type="button"
+              data-delete-media="${m.id}"
+              data-media-path="${escapeHtml(
+                m.storage_path
+              )}"
+              style="
+                position:absolute;
+                top:4px;
+                right:4px;
+                border:0;
+                border-radius:50%;
+                width:22px;
+                height:22px;
+                cursor:pointer;
+              "
+            >
+              ×
+            </button>
+
+          </div>
+        `;
+
+      }
+
+      return `
+        <div
+          style="
+            position:relative;
+            width:72px;
+            height:90px;
+            border-radius:12px;
+            overflow:hidden;
+            background:#ddd;
+          "
+        >
+
+          <img
+            src="${url}"
+            alt=""
+            style="
+              width:100%;
+              height:100%;
+              object-fit:cover;
+            "
+          >
+
+          <button
+            type="button"
+            data-delete-media="${m.id}"
+            data-media-path="${escapeHtml(
+              m.storage_path
+            )}"
+            style="
+              position:absolute;
+              top:4px;
+              right:4px;
+              border:0;
+              border-radius:50%;
+              width:22px;
+              height:22px;
+              cursor:pointer;
+            "
+          >
+            ×
+          </button>
+
+        </div>
+      `;
+
+    }).join("");
 
 
   return `
@@ -708,23 +757,24 @@ function productRow(p){
         .join(" ")
         .toLowerCase()
       )}"
+      style="
+        grid-template-columns:
+          90px 1fr auto;
+        align-items:start;
+      "
     >
 
-
-      ${productImage(p)}
+      ${productCover(p)}
 
 
       <div class="admin-meta">
 
         <strong>
-
           ${escapeHtml(
             p.name_ar ||
             p.name_en
           )}
-
         </strong>
-
 
         <small>
 
@@ -736,36 +786,71 @@ function productRow(p){
 
           ·
 
-          Stock: ${p.stock}
+          المخزون:
+          ${p.stock}
 
-          ·
+        </small>
+
+        <small>
 
           ${
             p.is_active
-              ? "ظاهر"
+              ? "ظاهر في المتجر"
               : "مخفي"
           }
 
+          ·
+
+          ${mediaCount}
+          ملفات Media
+
         </small>
+
+
+        <div
+          style="
+            display:flex;
+            flex-wrap:wrap;
+            gap:8px;
+            margin-top:12px;
+          "
+        >
+
+          ${mediaHtml}
+
+        </div>
+
+
+        <div
+          style="
+            display:flex;
+            gap:8px;
+            flex-wrap:wrap;
+            margin-top:12px;
+          "
+        >
+
+          <label
+            class="upload-label"
+          >
+
+            + صور / فيديو
+
+            <input
+              type="file"
+              accept="image/*,video/*"
+              multiple
+              data-upload-media="${p.id}"
+            >
+
+          </label>
+
+        </div>
 
       </div>
 
 
       <div class="admin-actions">
-
-
-        <label class="upload-label">
-
-          صورة
-
-          <input
-            type="file"
-            accept="image/*"
-            data-upload-image="${p.id}"
-          >
-
-        </label>
-
 
         <button
           data-edit-product="${p.id}"
@@ -773,844 +858,102 @@ function productRow(p){
           تعديل
         </button>
 
-
         <button
           data-delete-product="${p.id}"
         >
           حذف
         </button>
 
-
       </div>
 
     </div>
-
   `;
-
 }
 
 
-
-async function renderOrders(root){
-
-  const {
-    data,
-    error
-  } = await db
-
-    .from("orders")
-
-    .select(
-      "*,order_items(*,products(name_ar,name_en))"
-    )
-
-    .order(
-      "created_at",
-      {ascending:false}
-    );
-
-
-  if(error)
-    throw error;
-
-
-  root.innerHTML = `
-
-    <div class="admin-toolbar">
-
-      <div>
-
-        <span class="eyebrow">
-          CUSTOMER ORDERS
-        </span>
-
-        <h1 class="dash-title">
-          Orders
-        </h1>
-
-      </div>
-
-
-      <button
-        class="admin-secondary"
-        data-refresh-orders
-      >
-        تحديث
-      </button>
-
-    </div>
-
-
-    <div class="admin-card">
-
-      <div class="admin-table-wrap">
-
-        <table class="admin-table">
-
-          <thead>
-
-            <tr>
-
-              <th>
-                الطلب
-              </th>
-
-              <th>
-                الزبون
-              </th>
-
-              <th>
-                التوصيل
-              </th>
-
-              <th>
-                المحتوى
-              </th>
-
-              <th>
-                الإجمالي
-              </th>
-
-              <th>
-                الحالة
-              </th>
-
-            </tr>
-
-          </thead>
-
-
-          <tbody>
-
-            ${
-              data?.length
-
-              ?
-
-              data
-                .map(orderRow)
-                .join("")
-
-              :
-
-              `
-
-              <tr>
-
-                <td colspan="6">
-
-                  <div class="empty-admin">
-
-                    لا توجد طلبات بعد.
-
-                  </div>
-
-                </td>
-
-              </tr>
-
-              `
-            }
-
-          </tbody>
-
-        </table>
-
-      </div>
-
-    </div>
-
-  `;
-
-
-  document
-    .querySelectorAll(
-      "[data-order-status]"
-    )
-    .forEach(select => {
-
-      select.addEventListener(
-        "change",
-        async e => {
-
-          const id =
-            e.target.dataset.orderStatus;
-
-
-          const status =
-            e.target.value;
-
-
-          const {
-            error
-          } = await db
-
-            .from("orders")
-
-            .update({status})
-
-            .eq("id",id);
-
-
-          if(error)
-            alert(error.message);
-
-        }
-      );
-
-    });
-
-
-  $(
-    "refresh-orders"
-  )
-    ?.addEventListener(
-      "click",
-      () => renderTab("orders")
-    );
-
-}
-
-
-
-function orderRow(o){
-
-  const items =
-    (o.order_items || [])
-      .map(
-        i =>
-          `${escapeHtml(
-            i.products?.name_ar ||
-            i.products?.name_en ||
-            "Product"
-          )} × ${i.quantity}`
+function productCover(p) {
+
+  const media =
+    (p.product_images || [])
+      .find(x => x.is_cover)
+      ||
+    (p.product_images || [])
+      .find(
+        x =>
+          x.media_type === "image"
       )
-      .join("<br>");
+      ||
+    (p.product_images || [])[0];
 
 
-  const method =
-    o.delivery_method === "home"
+  if (!media) {
 
-      ? "توصيل للمنزل"
+    return `
+      <div class="admin-thumb">
+        NO MEDIA
+      </div>
+    `;
+  }
 
-      : "مكتب التوصيل";
+
+  const url =
+    publicUrl(
+      media.storage_path
+    );
+
+
+  if (
+    media.media_type === "video"
+  ) {
+
+    return `
+      <div class="admin-thumb">
+
+        <video
+          src="${url}"
+          muted
+          preload="metadata"
+          style="
+            width:100%;
+            height:100%;
+            object-fit:cover;
+          "
+        ></video>
+
+      </div>
+    `;
+  }
 
 
   return `
-
-    <tr>
-
-
-      <td>
-
-        <strong>
-          ${escapeHtml(
-            o.order_number
-          )}
-        </strong>
-
-        <br>
-
-        <small>
-          ${
-            new Date(
-              o.created_at
-            ).toLocaleString("fr-DZ")
-          }
-        </small>
-
-      </td>
-
-
-      <td>
-
-        <strong>
-          ${escapeHtml(
-            o.customer_name
-          )}
-        </strong>
-
-        <br>
-
-        ${escapeHtml(o.phone)}
-
-        <br>
-
-        <small>
-          ${escapeHtml(
-            o.notes || ""
-          )}
-        </small>
-
-      </td>
-
-
-      <td>
-
-        ${escapeHtml(
-          o.wilaya
-        )}
-
-        <br>
-
-        ${method}
-
-        <br>
-
-        <small>
-          ${escapeHtml(
-            o.address || "—"
-          )}
-        </small>
-
-      </td>
-
-
-      <td>
-
-        ${items}
-
-      </td>
-
-
-      <td>
-
-        ${money(o.total)}
-
-        <br>
-
-        <small>
-
-          المنتجات:
-          ${money(o.subtotal)}
-
-          <br>
-
-          التوصيل:
-          ${money(o.delivery_fee)}
-
-        </small>
-
-      </td>
-
-
-      <td>
-
-        <select
-          class="status-select"
-          data-order-status="${o.id}"
-        >
-
-          ${
-            [
-              "new",
-              "confirmed",
-              "preparing",
-              "shipped",
-              "delivered",
-              "cancelled"
-            ]
-              .map(
-                s => `
-
-                  <option
-                    value="${s}"
-                    ${
-                      o.status === s
-                        ? "selected"
-                        : ""
-                    }
-                  >
-                    ${s}
-                  </option>
-
-                `
-              )
-              .join("")
-          }
-
-        </select>
-
-      </td>
-
-    </tr>
-
-  `;
-
-}
-
-
-
-async function renderDelivery(root){
-
-  const {
-    data,
-    error
-  } = await db
-
-    .from("delivery_zones")
-
-    .select("*")
-
-    .order("wilaya");
-
-
-  if(error)
-    throw error;
-
-
-  root.innerHTML = `
-
-    <div class="admin-toolbar">
-
-      <div>
-
-        <span class="eyebrow">
-          DELIVERY
-        </span>
-
-        <h1 class="dash-title">
-          Delivery Zones
-        </h1>
-
-      </div>
-
-
-      <button
-        class="admin-primary"
-        id="saveDelivery"
+    <div class="admin-thumb">
+
+      <img
+        src="${url}"
+        alt=""
       >
-        حفظ الأسعار
-      </button>
 
     </div>
-
-
-    <div class="admin-card">
-
-      <p>
-
-        ضع سعر التوصيل لكل ولاية.
-        يمكن أن يكون سعر Home
-        مختلفًا عن Office.
-
-      </p>
-
-
-      <div class="admin-table-wrap">
-
-        <table class="admin-table">
-
-          <thead>
-
-            <tr>
-
-              <th>
-                Wilaya
-              </th>
-
-              <th>
-                Home
-              </th>
-
-              <th>
-                Office
-              </th>
-
-              <th>
-                Active
-              </th>
-
-            </tr>
-
-          </thead>
-
-
-          <tbody>
-
-            ${
-
-              data
-
-                .map(
-                  z => `
-
-                    <tr>
-
-                      <td>
-                        ${escapeHtml(
-                          z.wilaya
-                        )}
-                      </td>
-
-
-                      <td>
-
-                        <input
-                          class="delivery-input"
-                          data-id="${z.id}"
-                          data-field="home_fee"
-                          type="number"
-                          min="0"
-                          value="${z.home_fee}"
-                        >
-
-                      </td>
-
-
-                      <td>
-
-                        <input
-                          class="delivery-input"
-                          data-id="${z.id}"
-                          data-field="office_fee"
-                          type="number"
-                          min="0"
-                          value="${z.office_fee}"
-                        >
-
-                      </td>
-
-
-                      <td>
-
-                        <input
-                          class="delivery-active"
-                          data-id="${z.id}"
-                          type="checkbox"
-                          ${
-                            z.is_active
-                              ? "checked"
-                              : ""
-                          }
-                        >
-
-                      </td>
-
-                    </tr>
-
-                  `
-                )
-
-                .join("")
-
-            }
-
-          </tbody>
-
-        </table>
-
-      </div>
-
-    </div>
-
   `;
-
-
-  $("saveDelivery").onclick =
-    async () => {
-
-      const updates =
-        [
-          ...document
-            .querySelectorAll(
-              ".delivery-input"
-            )
-        ]
-
-        .reduce(
-          (a,input) => {
-
-            const id =
-              input.dataset.id;
-
-
-            a[id] ??= {
-              id:Number(id)
-            };
-
-
-            a[id][
-              input.dataset.field
-            ] =
-              Number(
-                input.value || 0
-              );
-
-
-            return a;
-
-          },
-          {}
-        );
-
-
-      const active =
-        [
-          ...document
-            .querySelectorAll(
-              ".delivery-active"
-            )
-        ];
-
-
-      for(
-        const item
-        of Object.values(updates)
-      ){
-
-        const checkbox =
-          active.find(
-            x =>
-              x.dataset.id ===
-              String(item.id)
-          );
-
-
-        item.is_active =
-          !!checkbox?.checked;
-
-
-        const {
-          error
-        } =
-          await db
-
-            .from("delivery_zones")
-
-            .update(item)
-
-            .eq(
-              "id",
-              item.id
-            );
-
-
-        if(error){
-
-          alert(
-            error.message
-          );
-
-          return;
-
-        }
-
-      }
-
-
-      alert(
-        "تم حفظ أسعار التوصيل"
-      );
-
-    };
-
 }
 
 
+function publicUrl(path) {
 
-async function renderMedia(root){
-
-  root.innerHTML = `
-
-    <div class="admin-toolbar">
-
-      <div>
-
-        <span class="eyebrow">
-          MEDIA
-        </span>
-
-        <h1 class="dash-title">
-          Media Studio
-        </h1>
-
-      </div>
-
-    </div>
-
-
-    <div class="admin-card">
-
-      <h3>
-        صور وفيديوهات المنتجات
-      </h3>
-
-
-      <p>
-
-        ارفع الصور من داخل كل منتج
-        في قسم Products.
-
-      </p>
-
-
-      <button
-        class="admin-primary"
-        data-tab-go="products"
-      >
-        إدارة صور المنتجات
-      </button>
-
-    </div>
-
-  `;
-
-
-  bindInlineActions();
-
+  return db
+    .storage
+    .from(BUCKET)
+    .getPublicUrl(path)
+    .data
+    .publicUrl;
 }
 
 
+/* ============================================================
+   PRODUCT MODAL
+============================================================ */
 
-async function renderSettings(root){
-
-  const session =
-    await getSession();
-
-
-  root.innerHTML = `
-
-    <div class="admin-toolbar">
-
-      <div>
-
-        <span class="eyebrow">
-          ACCOUNT
-        </span>
-
-        <h1 class="dash-title">
-          Settings
-        </h1>
-
-      </div>
-
-    </div>
-
-
-    <div class="admin-card">
-
-      <h3>
-        Owner account
-      </h3>
-
-
-      <p>
-
-        ${escapeHtml(
-          session?.user?.email || ""
-        )}
-
-      </p>
-
-
-      <p>
-
-        صلاحية المالك محفوظة
-        في Supabase عبر جدول
-        profiles و RLS.
-
-      </p>
-
-
-      <p>
-
-        لا تضع service_role key
-        في المتصفح.
-
-      </p>
-
-    </div>
-
-  `;
-
-}
-
-
-
-function bindInlineActions(){
-
-  document
-    .querySelectorAll(
-      "[data-open-product]"
-    )
-    .forEach(
-      b =>
-        b.onclick =
-          () => openProductModal()
-    );
-
-
-  document
-    .querySelectorAll(
-      "[data-tab-go]"
-    )
-    .forEach(
-      b =>
-        b.onclick =
-          () =>
-            renderTab(
-              b.dataset.tabGo
-            )
-    );
-
-
-  document
-    .querySelectorAll(
-      "[data-edit-product]"
-    )
-    .forEach(
-      b =>
-        b.onclick =
-          () =>
-            openProductModal(
-              Number(
-                b.dataset.editProduct
-              )
-            )
-    );
-
-
-  document
-    .querySelectorAll(
-      "[data-delete-product]"
-    )
-    .forEach(
-      b =>
-        b.onclick =
-          () =>
-            deleteProduct(
-              Number(
-                b.dataset.deleteProduct
-              )
-            )
-    );
-
-
-  document
-    .querySelectorAll(
-      "[data-upload-image]"
-    )
-    .forEach(
-      input =>
-        input.addEventListener(
-          "change",
-          e =>
-            uploadCover(
-              Number(
-                e.target.dataset
-                  .uploadImage
-              ),
-              e.target.files[0]
-            )
-        )
-    );
-
-}
-
-
-
-function openProductModal(id=null){
+function openProductModal(id = null) {
 
   const p =
     id
@@ -1644,11 +987,11 @@ function openProductModal(id=null){
 
 
   $("price").value =
-    p?.price || 0;
+    p?.price ?? 0;
 
 
   $("stock").value =
-    p?.stock || 0;
+    p?.stock ?? 0;
 
 
   $("descAr").value =
@@ -1674,6 +1017,11 @@ function openProductModal(id=null){
 
 
   $("categoryId").innerHTML =
+
+    `<option value="">
+      بدون تصنيف
+    </option>` +
+
     categories
       .map(
         c => `
@@ -1707,59 +1055,225 @@ function openProductModal(id=null){
   $("productModal")
     .classList
     .add("open");
-
 }
 
 
-
-function closeProductModal(){
+function closeProductModal() {
 
   $("productModal")
     .classList
     .remove("open");
-
 }
 
 
+/* ============================================================
+   SLUG
+============================================================ */
 
-async function saveProduct(e){
+function makeSlug(name) {
+
+  let slug =
+    String(name || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(
+        /[\u0300-\u036f]/g,
+        ""
+      )
+      .replace(
+        /[^a-z0-9\u0600-\u06ff]+/g,
+        "-"
+      )
+      .replace(
+        /^-+|-+$/g,
+        ""
+      );
+
+
+  if (!slug) {
+
+    slug =
+      "product-" +
+      Date.now();
+  }
+
+
+  return slug;
+}
+
+
+async function uniqueSlug(
+  base,
+  currentId = null
+) {
+
+  let slug =
+    makeSlug(base);
+
+  let candidate =
+    slug;
+
+  let counter = 2;
+
+
+  while (true) {
+
+    let query =
+      db
+        .from("products")
+        .select("id")
+        .eq("slug", candidate)
+        .limit(1);
+
+
+    if (currentId) {
+
+      query =
+        query.neq(
+          "id",
+          currentId
+        );
+    }
+
+
+    const {
+      data,
+      error
+    } = await query;
+
+
+    if (error)
+      throw error;
+
+
+    if (!data?.length)
+      return candidate;
+
+
+    candidate =
+      `${slug}-${counter}`;
+
+    counter++;
+  }
+}
+
+
+/* ============================================================
+   SAVE PRODUCT
+============================================================ */
+
+async function saveProduct(e) {
 
   e.preventDefault();
 
 
   const id =
-    $("productId").value;
+    $("productId").value.trim();
+
+
+  const nameAr =
+    $("nameAr")
+      .value
+      .trim();
+
+
+  const nameFr =
+    $("nameFr")
+      .value
+      .trim()
+      ||
+      nameAr;
+
+
+  const nameEn =
+    $("nameEn")
+      .value
+      .trim()
+      ||
+      nameAr;
+
+
+  const price =
+    Number(
+      $("price").value
+    );
+
+
+  const stock =
+    Number(
+      $("stock").value
+    );
+
+
+  if (!nameAr) {
+
+    message(
+      $("productMessage"),
+      "اكتب اسم المنتج.",
+      true
+    );
+
+    return;
+  }
+
+
+  if (
+    !Number.isFinite(price)
+    || price < 0
+  ) {
+
+    message(
+      $("productMessage"),
+      "السعر غير صحيح.",
+      true
+    );
+
+    return;
+  }
+
+
+  if (
+    !Number.isInteger(stock)
+    || stock < 0
+  ) {
+
+    message(
+      $("productMessage"),
+      "المخزون غير صحيح.",
+      true
+    );
+
+    return;
+  }
+
+
+  const slug =
+    await uniqueSlug(
+      nameEn || nameAr,
+      id || null
+    );
+
+
+  const categoryValue =
+    $("categoryId").value.trim();
 
 
   const payload = {
 
     category_id:
-      Number(
-        $("categoryId").value
-      ),
+      categoryValue || null,
+
+    slug,
 
     name_ar:
-      $("nameAr")
-        .value
-        .trim(),
+      nameAr,
 
     name_fr:
-      $("nameFr")
-        .value
-        .trim()
-      ||
-      $("nameAr")
-        .value
-        .trim(),
+      nameFr,
 
     name_en:
-      $("nameEn")
-        .value
-        .trim()
-      ||
-      $("nameAr")
-        .value
-        .trim(),
+      nameEn,
 
     description_ar:
       $("descAr")
@@ -1776,15 +1290,9 @@ async function saveProduct(e){
         .value
         .trim(),
 
-    price:
-      Number(
-        $("price").value
-      ),
+    price,
 
-    stock:
-      Number(
-        $("stock").value
-      ),
+    stock,
 
     is_featured:
       $("featured").checked,
@@ -1795,182 +1303,199 @@ async function saveProduct(e){
   };
 
 
-  if(
-    !payload.name_ar ||
-    payload.price < 0
-  ){
-
-    message(
-      $("productMessage"),
-      "أكمل اسم المنتج والسعر بشكل صحيح.",
-      true
-    );
-
-    return;
-
-  }
-
-
-  const query =
+  const result =
     id
 
-      ?
+      ? await db
+          .from("products")
+          .update(payload)
+          .eq("id", id)
+          .select()
+          .single()
 
-      db
-        .from("products")
-        .update(payload)
-        .eq("id",id)
-        .select()
-        .single()
-
-      :
-
-      db
-        .from("products")
-        .insert(payload)
-        .select()
-        .single();
+      : await db
+          .from("products")
+          .insert(payload)
+          .select()
+          .single();
 
 
-  const {
-    data,
-    error
-  } =
-    await query;
-
-
-  if(error){
+  if (result.error) {
 
     message(
       $("productMessage"),
-      error.message,
+      result.error.message,
       true
     );
 
     return;
-
   }
 
 
   closeProductModal();
 
+  await refreshProducts();
 
   await renderTab(
     "products"
   );
-
 }
 
 
+/* ============================================================
+   DELETE PRODUCT
+============================================================ */
 
-async function deleteProduct(id){
+async function deleteProduct(id) {
 
-  if(
+  const p =
+    products.find(
+      x => x.id === id
+    );
+
+
+  if (!p) return;
+
+
+  if (
     !confirm(
-      "هل تريد حذف هذا المنتج؟ سيتم حذف صوره المرتبطة أيضًا."
+      "هل تريد حذف المنتج وكل صوره وفيديوهاته؟"
     )
-  ){
+  ) {
 
     return;
+  }
 
+
+  const media =
+    p.product_images || [];
+
+
+  const paths =
+    media.map(
+      x => x.storage_path
+    );
+
+
+  if (paths.length) {
+
+    await db
+      .storage
+      .from(BUCKET)
+      .remove(paths);
   }
 
 
   const {
     error
-  } =
-    await db
-      .from("products")
-      .delete()
-      .eq("id",id);
+  } = await db
+    .from("products")
+    .delete()
+    .eq("id", id);
 
 
-  if(error){
+  if (error) {
 
     alert(
       error.message
     );
 
     return;
-
   }
 
+
+  await refreshProducts();
 
   await renderTab(
     "products"
   );
-
 }
 
 
+/* ============================================================
+   UPLOAD IMAGE / VIDEO
+============================================================ */
 
-async function uploadCover(
+async function uploadMedia(
   productId,
-  file
-){
+  files
+) {
 
-  if(!file)
+  if (!files?.length)
     return;
 
 
-  if(
-    !file.type.startsWith(
-      "image/"
-    )
-  ){
-
-    alert(
-      "اختَر صورة فقط."
-    );
-
-    return;
-
-  }
+  const selected =
+    [...files];
 
 
-  const safe =
-    file.name
-      .toLowerCase()
-      .replace(
-        /[^a-z0-9.\-_]+/g,
-        "-"
+  for (
+    const file
+    of selected
+  ) {
+
+    if (
+      !file.type.startsWith(
+        "image/"
+      )
+      &&
+      !file.type.startsWith(
+        "video/"
+      )
+    ) {
+
+      alert(
+        `${file.name}: نوع الملف غير مدعوم.`
       );
 
+      continue;
+    }
 
-  const path =
-    `products/${productId}/${crypto.randomUUID()}-${safe}`;
+
+    const safe =
+      file.name
+        .toLowerCase()
+        .replace(
+          /[^a-z0-9.\-_]+/g,
+          "-"
+        );
 
 
-  const upload =
-    await db
-      .storage
-      .from(BUCKET)
-      .upload(
-        path,
-        file,
-        {
-          upsert:false,
-          contentType:file.type
-        }
+    const path =
+      `products/${productId}/${crypto.randomUUID()}-${safe}`;
+
+
+    const upload =
+      await db
+        .storage
+        .from(BUCKET)
+        .upload(
+          path,
+          file,
+          {
+            upsert: false,
+            contentType: file.type
+          }
+        );
+
+
+    if (upload.error) {
+
+      alert(
+        upload.error.message
       );
 
-
-  if(upload.error){
-
-    alert(
-      upload.error.message
-    );
-
-    return;
-
-  }
+      continue;
+    }
 
 
-  const existing =
-    await db
+    const {
+      data: existing,
+      error: existingError
+    } = await db
       .from("product_images")
       .select(
-        "id,storage_path"
+        "id,is_cover"
       )
       .eq(
         "product_id",
@@ -1978,93 +1503,1027 @@ async function uploadCover(
       );
 
 
-  if(existing.error){
+    if (existingError) {
 
-    alert(
-      existing.error.message
-    );
+      await db
+        .storage
+        .from(BUCKET)
+        .remove([path]);
 
-    return;
+      alert(
+        existingError.message
+      );
 
+      continue;
+    }
+
+
+    const hasCover =
+      existing?.some(
+        x => x.is_cover
+      );
+
+
+    const mediaType =
+      file.type.startsWith(
+        "video/"
+      )
+        ? "video"
+        : "image";
+
+
+    const insert =
+      await db
+        .from("product_images")
+        .insert({
+
+          product_id:
+            productId,
+
+          storage_path:
+            path,
+
+          media_type:
+            mediaType,
+
+          is_cover:
+            !hasCover,
+
+          sort_order:
+            existing?.length || 0
+
+        })
+        .select()
+        .single();
+
+
+    if (insert.error) {
+
+      await db
+        .storage
+        .from(BUCKET)
+        .remove([path]);
+
+      alert(
+        insert.error.message
+      );
+
+      continue;
+    }
+
+
+    if (!hasCover) {
+
+      const url =
+        publicUrl(path);
+
+
+      await db
+        .from("products")
+        .update({
+          cover_image: url
+        })
+        .eq(
+          "id",
+          productId
+        );
+    }
   }
 
 
-  if(existing.data?.length){
+  await refreshProducts();
 
-    const paths =
-      existing.data.map(
-        x => x.storage_path
-      );
-
-
-    await db
-      .storage
-      .from(BUCKET)
-      .remove(paths);
+  await renderTab(
+    "products"
+  );
+}
 
 
-    await db
-      .from("product_images")
-      .delete()
-      .eq(
-        "product_id",
-        productId
-      );
+/* ============================================================
+   DELETE MEDIA
+============================================================ */
 
+async function deleteMedia(
+  mediaId,
+  storagePath
+) {
+
+  if (
+    !confirm(
+      "هل تريد حذف هذا الملف؟"
+    )
+  ) {
+
+    return;
   }
 
 
   const {
+    data: media,
+    error: mediaError
+  } = await db
+    .from("product_images")
+    .select(
+      "id,product_id,is_cover"
+    )
+    .eq(
+      "id",
+      mediaId
+    )
+    .single();
+
+
+  if (mediaError)
+    throw mediaError;
+
+
+  await db
+    .storage
+    .from(BUCKET)
+    .remove([
+      storagePath
+    ]);
+
+
+  const {
     error
-  } =
-    await db
-      .from("product_images")
-      .insert({
-
-        product_id:
-          productId,
-
-        storage_path:
-          path,
-
-        is_cover:
-          true,
-
-        sort_order:
-          0
-
-      });
+  } = await db
+    .from("product_images")
+    .delete()
+    .eq(
+      "id",
+      mediaId
+    );
 
 
-  if(error){
-
-    await db
-      .storage
-      .from(BUCKET)
-      .remove([path]);
-
+  if (error) {
 
     alert(
       error.message
     );
 
     return;
-
   }
 
+
+  if (media.is_cover) {
+
+    const {
+      data: next
+    } = await db
+      .from("product_images")
+      .select("*")
+      .eq(
+        "product_id",
+        media.product_id
+      )
+      .order(
+        "sort_order"
+      )
+      .limit(1);
+
+
+    if (next?.length) {
+
+      await db
+        .from("product_images")
+        .update({
+          is_cover: true
+        })
+        .eq(
+          "id",
+          next[0].id
+        );
+
+
+      await db
+        .from("products")
+        .update({
+          cover_image:
+            publicUrl(
+              next[0]
+                .storage_path
+            )
+        })
+        .eq(
+          "id",
+          media.product_id
+        );
+
+    } else {
+
+      await db
+        .from("products")
+        .update({
+          cover_image: null
+        })
+        .eq(
+          "id",
+          media.product_id
+        );
+    }
+  }
+
+
+  await refreshProducts();
 
   await renderTab(
     "products"
   );
+}
+
+
+/* ============================================================
+   ORDERS
+============================================================ */
+
+async function renderOrders(root) {
+
+  const {
+    data,
+    error
+  } = await db
+    .from("orders")
+    .select(
+      "*,order_items(*)"
+    )
+    .order(
+      "created_at",
+      {
+        ascending: false
+      }
+    );
+
+
+  if (error)
+    throw error;
+
+
+  root.innerHTML = `
+
+    <div class="admin-toolbar">
+
+      <div>
+
+        <span class="eyebrow">
+          CUSTOMER ORDERS
+        </span>
+
+        <h1 class="dash-title">
+          Orders
+        </h1>
+
+      </div>
+
+      <button
+        class="admin-secondary"
+        data-refresh-orders
+      >
+        تحديث
+      </button>
+
+    </div>
+
+
+    <div class="admin-card">
+
+      <div class="admin-table-wrap">
+
+        <table class="admin-table">
+
+          <thead>
+
+            <tr>
+
+              <th>الطلب</th>
+
+              <th>الزبون</th>
+
+              <th>التوصيل</th>
+
+              <th>المحتوى</th>
+
+              <th>الإجمالي</th>
+
+              <th>الحالة</th>
+
+            </tr>
+
+          </thead>
+
+
+          <tbody>
+
+            ${
+              data?.length
+
+                ? data
+                    .map(
+                      orderRow
+                    )
+                    .join("")
+
+                : `
+
+                  <tr>
+
+                    <td colspan="6">
+
+                      <div
+                        class="empty-admin"
+                      >
+                        لا توجد طلبات بعد.
+                      </div>
+
+                    </td>
+
+                  </tr>
+
+                `
+            }
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </div>
+
+  `;
+
+
+  document
+    .querySelectorAll(
+      "[data-order-status]"
+    )
+    .forEach(select => {
+
+      select.addEventListener(
+        "change",
+        async e => {
+
+          const id =
+            e.target.dataset
+              .orderStatus;
+
+          const status =
+            e.target.value;
+
+
+          const {
+            error
+          } = await db
+            .from("orders")
+            .update({
+              status
+            })
+            .eq(
+              "id",
+              id
+            );
+
+
+          if (error) {
+
+            alert(
+              error.message
+            );
+
+            return;
+          }
+        }
+      );
+    });
+
+
+  $("refresh-orders")
+    ?.addEventListener(
+      "click",
+      () =>
+        renderTab(
+          "orders"
+        )
+    );
+}
+
+
+function orderRow(o) {
+
+  const items =
+    (o.order_items || [])
+      .map(
+        item =>
+          `
+          ${escapeHtml(
+            item.product_name
+          )}
+          × ${item.quantity}
+          `
+      )
+      .join("<br>");
+
+
+  const method =
+    o.delivery_method === "home"
+      ? "توصيل للمنزل"
+      : "مكتب التوصيل";
+
+
+  return `
+
+    <tr>
+
+      <td>
+
+        <strong>
+          ${escapeHtml(
+            o.order_number
+          )}
+        </strong>
+
+        <br>
+
+        <small>
+          ${new Date(
+            o.created_at
+          ).toLocaleString("fr-DZ")}
+        </small>
+
+      </td>
+
+
+      <td>
+
+        <strong>
+          ${escapeHtml(
+            o.customer_name
+          )}
+        </strong>
+
+        <br>
+
+        ${escapeHtml(
+          o.customer_phone
+        )}
+
+        ${
+          o.customer_email
+            ? `<br>${escapeHtml(
+                o.customer_email
+              )}`
+            : ""
+        }
+
+      </td>
+
+
+      <td>
+
+        ${escapeHtml(
+          o.wilaya_name
+        )}
+
+        <br>
+
+        ${method}
+
+        <br>
+
+        <small>
+          ${escapeHtml(
+            o.address || "—"
+          )}
+        </small>
+
+      </td>
+
+
+      <td>
+
+        ${items}
+
+      </td>
+
+
+      <td>
+
+        ${money(o.total)}
+
+        <br>
+
+        <small>
+          المنتجات:
+          ${money(o.subtotal)}
+          <br>
+          التوصيل:
+          ${money(o.delivery_fee)}
+        </small>
+
+      </td>
+
+
+      <td>
+
+        <select
+          class="status-select"
+          data-order-status="${o.id}"
+        >
+
+          ${
+            [
+              "new",
+              "confirmed",
+              "preparing",
+              "shipped",
+              "delivered",
+              "cancelled"
+            ]
+              .map(
+                status =>
+                  `
+                  <option
+                    value="${status}"
+                    ${
+                      o.status === status
+                        ? "selected"
+                        : ""
+                    }
+                  >
+                    ${status}
+                  </option>
+                  `
+              )
+              .join("")
+          }
+
+        </select>
+
+      </td>
+
+    </tr>
+  `;
+}
+
+
+/* ============================================================
+   DELIVERY
+============================================================ */
+
+async function renderDelivery(root) {
+
+  const {
+    data,
+    error
+  } = await db
+    .from("delivery_zones")
+    .select("*")
+    .order(
+      "wilaya_code"
+    );
+
+
+  if (error)
+    throw error;
+
+
+  root.innerHTML = `
+
+    <div class="admin-toolbar">
+
+      <div>
+
+        <span class="eyebrow">
+          DELIVERY
+        </span>
+
+        <h1 class="dash-title">
+          Delivery Zones
+        </h1>
+
+      </div>
+
+      <button
+        class="admin-primary"
+        id="saveDelivery"
+      >
+        حفظ الأسعار
+      </button>
+
+    </div>
+
+
+    <div class="admin-card">
+
+      <p>
+        حدد سعر التوصيل للمنزل
+        أو مكتب التوصيل لكل ولاية.
+      </p>
+
+
+      <div class="admin-table-wrap">
+
+        <table class="admin-table">
+
+          <thead>
+
+            <tr>
+              <th>الولاية</th>
+              <th>Home</th>
+              <th>Office</th>
+              <th>Active</th>
+            </tr>
+
+          </thead>
+
+
+          <tbody>
+
+            ${
+              data
+                .map(
+                  z => `
+
+                    <tr>
+
+                      <td>
+                        ${escapeHtml(
+                          z.wilaya_name_ar
+                        )}
+                      </td>
+
+                      <td>
+
+                        <input
+                          class="delivery-input"
+                          data-id="${z.id}"
+                          data-field="home_fee"
+                          type="number"
+                          min="0"
+                          value="${z.home_fee}"
+                        >
+
+                      </td>
+
+                      <td>
+
+                        <input
+                          class="delivery-input"
+                          data-id="${z.id}"
+                          data-field="office_fee"
+                          type="number"
+                          min="0"
+                          value="${z.office_fee}"
+                        >
+
+                      </td>
+
+                      <td>
+
+                        <input
+                          class="delivery-active"
+                          data-id="${z.id}"
+                          type="checkbox"
+                          ${
+                            z.is_active
+                              ? "checked"
+                              : ""
+                          }
+                        >
+
+                      </td>
+
+                    </tr>
+
+                  `
+                )
+                .join("")
+            }
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </div>
+
+  `;
+
+
+  $("saveDelivery").onclick =
+    async () => {
+
+      const rows =
+        {};
+
+      document
+        .querySelectorAll(
+          ".delivery-input"
+        )
+        .forEach(
+          input => {
+
+            const id =
+              input.dataset.id;
+
+            rows[id] ??= {
+              id
+            };
+
+            rows[id][
+              input.dataset.field
+            ] =
+              Number(
+                input.value || 0
+              );
+          }
+        );
+
+
+      for (
+        const row
+        of Object.values(rows)
+      ) {
+
+        const active =
+          document.querySelector(
+            `.delivery-active[data-id="${row.id}"]`
+          );
+
+
+        row.is_active =
+          !!active?.checked;
+
+
+        const {
+          id,
+          ...update
+        } = row;
+
+
+        const {
+          error
+        } = await db
+          .from("delivery_zones")
+          .update(update)
+          .eq(
+            "id",
+            id
+          );
+
+
+        if (error) {
+
+          alert(
+            error.message
+          );
+
+          return;
+        }
+      }
+
+
+      alert(
+        "تم حفظ أسعار التوصيل."
+      );
+    };
+}
+
+
+/* ============================================================
+   MEDIA
+============================================================ */
+
+async function renderMedia(root) {
+
+  root.innerHTML = `
+
+    <div class="admin-toolbar">
+
+      <div>
+
+        <span class="eyebrow">
+          MEDIA
+        </span>
+
+        <h1 class="dash-title">
+          Media Studio
+        </h1>
+
+      </div>
+
+    </div>
+
+
+    <div class="admin-card">
+
+      <h3>
+        إدارة صور وفيديوهات المنتجات
+      </h3>
+
+      <p>
+        افتح Products ثم اختر المنتج
+        لرفع الصور أو الفيديوهات.
+      </p>
+
+      <button
+        class="admin-primary"
+        data-tab-go="products"
+      >
+        إدارة Media
+      </button>
+
+    </div>
+
+  `;
+
+  bindInlineActions();
+}
+
+
+/* ============================================================
+   SETTINGS
+============================================================ */
+
+async function renderSettings(root) {
+
+  const session =
+    await getSession();
+
+
+  root.innerHTML = `
+
+    <div class="admin-toolbar">
+
+      <div>
+
+        <span class="eyebrow">
+          ACCOUNT
+        </span>
+
+        <h1 class="dash-title">
+          Settings
+        </h1>
+
+      </div>
+
+    </div>
+
+
+    <div class="admin-card">
+
+      <h3>
+        Owner account
+      </h3>
+
+      <p>
+        ${escapeHtml(
+          session?.user?.email || ""
+        )}
+      </p>
+
+      <p>
+        الحساب محمي بواسطة
+        Supabase Auth + RLS.
+      </p>
+
+    </div>
+
+  `;
+}
+
+
+/* ============================================================
+   BUTTONS
+============================================================ */
+
+function bindInlineActions() {
+
+  document
+    .querySelectorAll(
+      "[data-open-product]"
+    )
+    .forEach(
+      button => {
+
+        button.onclick =
+          () =>
+            openProductModal();
+
+      }
+    );
+
+
+  document
+    .querySelectorAll(
+      "[data-tab-go]"
+    )
+    .forEach(
+      button => {
+
+        button.onclick =
+          () =>
+            renderTab(
+              button.dataset.tabGo
+            );
+
+      }
+    );
+
+
+  document
+    .querySelectorAll(
+      "[data-edit-product]"
+    )
+    .forEach(
+      button => {
+
+        button.onclick =
+          () =>
+            openProductModal(
+              button.dataset
+                .editProduct
+            );
+
+      }
+    );
+
+
+  document
+    .querySelectorAll(
+      "[data-delete-product]"
+    )
+    .forEach(
+      button => {
+
+        button.onclick =
+          () =>
+            deleteProduct(
+              button.dataset
+                .deleteProduct
+            );
+
+      }
+    );
+
+
+  document
+    .querySelectorAll(
+      "[data-upload-media]"
+    )
+    .forEach(
+      input => {
+
+        input.addEventListener(
+          "change",
+          async e => {
+
+            await uploadMedia(
+              e.target.dataset
+                .uploadMedia,
+
+              e.target.files
+            );
+
+            e.target.value = "";
+          }
+        );
+
+      }
+    );
+
+
+  document
+    .querySelectorAll(
+      "[data-delete-media]"
+    )
+    .forEach(
+      button => {
+
+        button.onclick =
+          () =>
+            deleteMedia(
+              button.dataset
+                .deleteMedia,
+
+              button.dataset
+                .mediaPath
+            );
+
+      }
+    );
 
 }
 
 
+/* ============================================================
+   LOGIN
+============================================================ */
 
-async function login(e){
+async function login(e) {
 
   e.preventDefault();
-
 
   message(
     $("loginMessage"),
@@ -2072,10 +2531,9 @@ async function login(e){
   );
 
 
-  try{
+  try {
 
     const {
-      data,
       error
     } =
       await db.auth
@@ -2093,7 +2551,7 @@ async function login(e){
         });
 
 
-    if(error)
+    if (error)
       throw error;
 
 
@@ -2101,62 +2559,67 @@ async function login(e){
       await ensureOwner();
 
 
-    if(!owner){
+    if (!owner) {
 
-      await db.auth
-        .signOut();
-
+      await db.auth.signOut();
 
       throw new Error(
         "هذا الحساب ليس حساب مالك Atelier Noura."
       );
-
     }
 
 
     await showDashboard();
 
 
-  }catch(err){
+  } catch (err) {
 
     message(
       $("loginMessage"),
       err.message,
       true
     );
-
   }
-
 }
 
 
+async function logout() {
 
-async function logout(){
+  if (realtimeChannel) {
+
+    db.removeChannel(
+      realtimeChannel
+    );
+
+    realtimeChannel = null;
+  }
+
 
   await db.auth.signOut();
 
   showLogin();
-
 }
 
 
+/* ============================================================
+   BOOT
+============================================================ */
 
-async function boot(){
+async function boot() {
 
-  if(!configured()){
+  if (!configured()) {
 
     message(
       $("loginMessage"),
-      "لم يتم ربط Supabase بعد. افتح js/supabase.js وضع URL و anon/publishable key للمشروع.",
+      "Supabase غير مضبوط بشكل صحيح.",
       true
     );
 
     return;
-
   }
 
 
-  try{
+  try {
 
     db =
       await initSupabase();
@@ -2166,70 +2629,54 @@ async function boot(){
       await getSession();
 
 
-    if(session){
+    if (session) {
 
       const owner =
         await ensureOwner();
 
 
-      if(owner){
+      if (owner) {
 
         await showDashboard();
 
-      }else{
+      } else {
 
         await db.auth.signOut();
-
       }
-
     }
 
 
-  }catch(error){
+  } catch (error) {
 
     message(
       $("loginMessage"),
       error.message,
       true
     );
-
   }
-
 }
-
 
 
 document.addEventListener(
   "DOMContentLoaded",
   () => {
 
-    if(!configured()){
-
-      message(
-        $("loginMessage"),
-        "أكمل إعداد Supabase أولًا في js/supabase.js.",
-        true
-      );
-
-    }
-
-
     $("loginForm")
-      .addEventListener(
+      ?.addEventListener(
         "submit",
         login
       );
 
 
     $("logoutBtn")
-      .addEventListener(
+      ?.addEventListener(
         "click",
         logout
       );
 
 
     $("productForm")
-      .addEventListener(
+      ?.addEventListener(
         "submit",
         saveProduct
       );
@@ -2240,11 +2687,13 @@ document.addEventListener(
         "[data-close-modal]"
       )
       .forEach(
-        b =>
-          b.addEventListener(
+        button => {
+
+          button.addEventListener(
             "click",
             closeProductModal
-          )
+          );
+        }
       );
 
 
@@ -2253,10 +2702,11 @@ document.addEventListener(
         ".admin-tab"
       )
       .forEach(
-        b =>
-          b.addEventListener(
+        button => {
+
+          button.addEventListener(
             "click",
-            () => {
+            async () => {
 
               document
                 .querySelectorAll(
@@ -2271,16 +2721,16 @@ document.addEventListener(
                 );
 
 
-              b.classList
+              button.classList
                 .add("active");
 
 
-              renderTab(
-                b.dataset.tab
+              await renderTab(
+                button.dataset.tab
               );
-
             }
-          )
+          );
+        }
       );
 
 
