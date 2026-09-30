@@ -1,8 +1,330 @@
+const translations = {
 
-const translations={
-ar:{announcement:"شحن متاح عبر الجزائر • قطع مصنوعة يدويًا بعناية",home:"الرئيسية",shop:"المتجر",story:"قصتنا",contact:"تواصل",heroTitle:"تفاصيل صغيرة،<br><em>تصنع فرقًا كبيرًا.</em>",heroText:"قطع مصنوعة يدويًا بروح هادئة، لترافقك في تفاصيل يومك.",discover:"اكتشفي المجموعة",ourStory:"اكتشفي قصتنا ↗",categoriesTitle:"اختاري ما يشبهك",bags:"حقائب",skirts:"تنورات",accessories:"إكسسوارات",viewAll:"عرض الكل ↗",featured:"مختاراتنا",shopNow:"تسوقي الآن ↗",storyTitle:"نصنع الأشياء<br><em>بهدوء.</em>",storyText:"Atelier Noura مساحة صغيرة للأشياء التي تستحق وقتًا أطول. نختار الخامات، نعتني بالتفاصيل، ونصنع كل قطعة بروح شخصية.",value1:"صناعة يدوية",value2:"توصيل عبر الجزائر",value3:"اختيارات مدروسة",newsletterTitle:"كوني قريبة من عالم Noura.",newsletterText:"تابعي الجديد والقطع المحدودة.",join:"انضمي إلينا"},
-fr:{announcement:"Livraison en Algérie • Pièces faites main avec soin",home:"Accueil",shop:"Boutique",story:"Notre histoire",contact:"Contact",heroTitle:"De petits détails,<br><em>une grande différence.</em>",heroText:"Des pièces faites main avec une attention particulière aux détails.",discover:"Découvrir la collection",ourStory:"Notre histoire ↗",categoriesTitle:"Choisissez votre style",bags:"Sacs",skirts:"Jupes",accessories:"Accessoires",viewAll:"Tout voir ↗",featured:"Nos favoris",shopNow:"Acheter ↗",storyTitle:"Nous créons<br><em>lentement.</em>",storyText:"Atelier Noura est un petit espace dédié aux pièces qui méritent du temps et du soin.",value1:"Fait main",value2:"Livraison en Algérie",value3:"Détails choisis",newsletterTitle:"Entrez dans l'univers Noura.",newsletterText:"Découvrez les nouveautés et pièces limitées.",join:"Rejoindre"},
-en:{announcement:"Delivery across Algeria • Handmade with care",home:"Home",shop:"Shop",story:"Our story",contact:"Contact",heroTitle:"Small details,<br><em>make a difference.</em>",heroText:"Handmade pieces created slowly, with care for everyday details.",discover:"Discover the collection",ourStory:"Our story ↗",categoriesTitle:"Choose your mood",bags:"Bags",skirts:"Skirts",accessories:"Accessories",viewAll:"View all ↗",featured:"Curated for you",shopNow:"Shop now ↗",storyTitle:"We make things<br><em>slowly.</em>",storyText:"Atelier Noura is a small space for pieces that deserve more time, care and personality.",value1:"Handmade",value2:"Delivery across Algeria",value3:"Curated details",newsletterTitle:"Stay close to Noura.",newsletterText:"Follow new and limited pieces.",join:"Join us"}
+  ar: {
+
+    announcement:
+      "شحن متاح عبر الجزائر • قطع مصنوعة يدويًا بعناية",
+
+    home:
+      "الرئيسية",
+
+    shop:
+      "المتجر",
+
+    story:
+      "قصتنا",
+
+    contact:
+      "تواصل",
+
+    account:
+      "حساب",
+
+    heroTitle:
+      "تفاصيل صغيرة،<br><em>تصنع فرقًا كبيرًا.</em>",
+
+    heroText:
+      "قطع مصنوعة يدويًا بروح هادئة، لترافقك في تفاصيل يومك.",
+
+    discover:
+      "اكتشفي المجموعة",
+
+    ourStory:
+      "اكتشفي قصتنا ↗",
+
+    categoriesTitle:
+      "اختاري ما يشبهك",
+
+    bags:
+      "حقائب",
+
+    skirts:
+      "تنورات",
+
+    accessories:
+      "إكسسوارات",
+
+    viewAll:
+      "عرض الكل ↗",
+
+    featured:
+      "مختاراتنا",
+
+    shopNow:
+      "تسوقي الآن ↗",
+
+    storyTitle:
+      "نصنع الأشياء<br><em>بهدوء.</em>",
+
+    storyText:
+      "Atelier Noura مساحة صغيرة للأشياء التي تستحق وقتًا أطول. نختار الخامات، نعتني بالتفاصيل، ونصنع كل قطعة بروح شخصية.",
+
+    value1:
+      "صناعة يدوية",
+
+    value2:
+      "توصيل عبر الجزائر",
+
+    value3:
+      "اختيارات مدروسة",
+
+    newsletterTitle:
+      "كوني قريبة من عالم Noura.",
+
+    newsletterText:
+      "تابعي الجديد والقطع المحدودة.",
+
+    join:
+      "انضمي إلينا"
+
+  },
+
+
+  fr: {
+
+    announcement:
+      "Livraison en Algérie • Pièces faites main avec soin",
+
+    home:
+      "Accueil",
+
+    shop:
+      "Boutique",
+
+    story:
+      "Notre histoire",
+
+    contact:
+      "Contact",
+
+    account:
+      "Account",
+
+    heroTitle:
+      "De petits détails,<br><em>une grande différence.</em>",
+
+    heroText:
+      "Des pièces faites main avec une attention particulière aux détails.",
+
+    discover:
+      "Découvrir la collection",
+
+    ourStory:
+      "Notre histoire ↗",
+
+    categoriesTitle:
+      "Choisissez votre style",
+
+    bags:
+      "Sacs",
+
+    skirts:
+      "Jupes",
+
+    accessories:
+      "Accessoires",
+
+    viewAll:
+      "Tout voir ↗",
+
+    featured:
+      "Nos favoris",
+
+    shopNow:
+      "Acheter ↗",
+
+    storyTitle:
+      "Nous créons<br><em>lentement.</em>",
+
+    storyText:
+      "Atelier Noura est un petit espace dédié aux pièces qui méritent du temps et du soin.",
+
+    value1:
+      "Fait main",
+
+    value2:
+      "Livraison en Algérie",
+
+    value3:
+      "Détails choisis",
+
+    newsletterTitle:
+      "Entrez dans l'univers Noura.",
+
+    newsletterText:
+      "Découvrez les nouveautés et pièces limitées.",
+
+    join:
+      "Rejoindre"
+
+  },
+
+
+  en: {
+
+    announcement:
+      "Delivery across Algeria • Handmade with care",
+
+    home:
+      "Home",
+
+    shop:
+      "Shop",
+
+    story:
+      "Our story",
+
+    contact:
+      "Contact",
+
+    account:
+      "Account",
+
+    heroTitle:
+      "Small details,<br><em>make a difference.</em>",
+
+    heroText:
+      "Handmade pieces created slowly, with care for everyday details.",
+
+    discover:
+      "Discover the collection",
+
+    ourStory:
+      "Our story ↗",
+
+    categoriesTitle:
+      "Choose your mood",
+
+    bags:
+      "Bags",
+
+    skirts:
+      "Skirts",
+
+    accessories:
+      "Accessories",
+
+    viewAll:
+      "View all ↗",
+
+    featured:
+      "Curated for you",
+
+    shopNow:
+      "Shop now ↗",
+
+    storyTitle:
+      "We make things<br><em>slowly.</em>",
+
+    storyText:
+      "Atelier Noura is a small space for pieces that deserve more time, care and personality.",
+
+    value1:
+      "Handmade",
+
+    value2:
+      "Delivery across Algeria",
+
+    value3:
+      "Curated details",
+
+    newsletterTitle:
+      "Stay close to Noura.",
+
+    newsletterText:
+      "Follow new and limited pieces.",
+
+    join:
+      "Join us"
+
+  }
+
 };
-function applyLang(lang){localStorage.setItem("lang",lang);document.documentElement.lang=lang;document.documentElement.dir=lang==="ar"?"rtl":"ltr";document.querySelectorAll("[data-i18n]").forEach(e=>{const k=e.dataset.i18n;if(translations[lang]?.[k])e.innerHTML=translations[lang][k]});const b=document.getElementById("langBtn");if(b)b.textContent=lang.toUpperCase()}
-document.addEventListener("DOMContentLoaded",()=>{let l=localStorage.getItem("lang")||"ar";applyLang(l);document.getElementById("langBtn")?.addEventListener("click",()=>{const cur=localStorage.getItem("lang")||"ar";applyLang(cur==="ar"?"fr":cur==="fr"?"en":"ar")})});
+
+
+function applyLang(lang){
+
+  localStorage.setItem(
+    "lang",
+    lang
+  );
+
+
+  document.documentElement.lang =
+    lang;
+
+
+  document.documentElement.dir =
+    lang === "ar"
+      ? "rtl"
+      : "ltr";
+
+
+  document
+    .querySelectorAll("[data-i18n]")
+    .forEach(e => {
+
+      const k =
+        e.dataset.i18n;
+
+
+      if(translations[lang]?.[k]){
+
+        e.innerHTML =
+          translations[lang][k];
+
+      }
+
+    });
+
+
+  const b =
+    document.getElementById("langBtn");
+
+
+  if(b){
+
+    b.textContent =
+      lang.toUpperCase();
+
+  }
+
+}
+
+
+document.addEventListener(
+  "DOMContentLoaded",
+  () => {
+
+    let l =
+      localStorage.getItem("lang") ||
+      "ar";
+
+
+    applyLang(l);
+
+
+    document
+      .getElementById("langBtn")
+      ?.addEventListener(
+        "click",
+        () => {
+
+          const cur =
+            localStorage.getItem("lang") ||
+            "ar";
+
+
+          applyLang(
+            cur === "ar"
+              ? "fr"
+              : cur === "fr"
+                ? "en"
+                : "ar"
+          );
+
+        }
+      );
+
+  }
+);
