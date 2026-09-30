@@ -3,7 +3,7 @@
 // ممنوع وضع service_role key هنا.
 
 window.SUPABASE_CONFIG = {
-  url: "https://rjhdfzwsmsijpwfqglxn.supabase.co/rest/v1/",
+  url: "https://rjhdfzwsmsijpwfqglxn.supabase.co",
   anonKey: "YOUR_SUPABASE_ANON_OR_PUBLISHABLE_KEY"
 };
 
