@@ -1,1 +1,217 @@
-<!doctype html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Order received — Atelier Noura</title><link rel="stylesheet" href="css/style.css"><link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet"></head><body><main class="success"><div class="success-mark">✓</div><p class="eyebrow">ATELIER NOURA</p><h1>تم استلام طلبك.</h1><p>شكرًا لثقتك بنا. رقم الطلب:</p><strong id="orderNo">AN-0000</strong><a class="btn btn-dark" href="products.html">العودة للمتجر</a></main><script>document.getElementById('orderNo').textContent=localStorage.getItem('lastOrder')||'AN-0000'</script></body></html>
+<!doctype html>
+<html lang="ar" dir="rtl">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width,initial-scale=1"
+    >
+
+    <title>تم إرسال الطلب — Atelier Noura</title>
+
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap"
+        rel="stylesheet"
+    >
+
+    <link
+        rel="stylesheet"
+        href="css/style.css"
+    >
+
+    <style>
+        .success-page {
+            min-height: 70vh;
+            display: grid;
+            place-items: center;
+            padding: 40px 20px;
+        }
+
+        .success-card {
+            width: min(650px,100%);
+            text-align: center;
+            background: #fff;
+            border: 1px solid #eee5de;
+            border-radius: 28px;
+            padding: 45px 25px;
+            box-shadow: 0 25px 70px rgba(30,24,20,.08);
+        }
+
+        .success-icon {
+            width: 75px;
+            height: 75px;
+            margin: 0 auto 20px;
+            border-radius: 50%;
+            display: grid;
+            place-items: center;
+            background: #eee7df;
+            font-size: 35px;
+        }
+
+        .success-card h1 {
+            font-family: "Playfair Display", serif;
+            font-size: 38px;
+        }
+
+        .order-number {
+            display: inline-block;
+            margin: 15px 0;
+            padding: 12px 18px;
+            border-radius: 12px;
+            background: #f7f2ed;
+            font-weight: 700;
+        }
+
+        .success-actions {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 25px;
+        }
+
+        .success-actions a {
+            padding: 13px 18px;
+            border-radius: 12px;
+            text-decoration: none;
+        }
+
+        .success-primary {
+            background: #211914;
+            color: #fff;
+        }
+
+        .success-secondary {
+            background: #eee7df;
+            color: #211914;
+        }
+    </style>
+
+</head>
+
+<body>
+
+<header class="site-header">
+
+    <a class="brand" href="index.html">
+
+        <span class="brand-mark">AN</span>
+
+        <span>
+            <b>Atelier</b> Noura
+            <small>HANDMADE STUDIO</small>
+        </span>
+
+    </a>
+
+    <nav class="nav">
+        <a href="index.html">الرئيسية</a>
+        <a href="products.html">المتجر</a>
+    </nav>
+
+</header>
+
+<main class="success-page">
+
+    <section class="success-card">
+
+        <div class="success-icon">
+            ✓
+        </div>
+
+        <h1>
+            تم إرسال طلبك بنجاح
+        </h1>
+
+        <p>
+            شكرًا لثقتك بـ Atelier Noura.
+        </p>
+
+        <p>
+            رقم طلبك:
+        </p>
+
+        <div
+            id="orderNumber"
+            class="order-number"
+        >
+            —
+        </div>
+
+        <div id="orderSummary"></div>
+
+        <div class="success-actions">
+
+            <a
+                href="index.html"
+                class="success-primary"
+            >
+                العودة إلى المتجر
+            </a>
+
+            <a
+                href="products.html"
+                class="success-secondary"
+            >
+                متابعة التسوق
+            </a>
+
+        </div>
+
+    </section>
+
+</main>
+
+<script>
+
+document.addEventListener("DOMContentLoaded", () => {
+
+    const raw =
+        localStorage.getItem(
+            "atelier_noura_last_order"
+        );
+
+    if (!raw) {
+        return;
+    }
+
+    try {
+
+        const order =
+            JSON.parse(raw);
+
+        document.getElementById(
+            "orderNumber"
+        ).textContent =
+            order.order_number || "—";
+
+        document.getElementById(
+            "orderSummary"
+        ).innerHTML = `
+            <p>
+                الإجمالي:
+                <strong>
+                    ${Number(order.total || 0).toLocaleString("fr-DZ")}
+                    DA
+                </strong>
+            </p>
+        `;
+
+    } catch (error) {
+
+        console.error(
+            "Order success error:",
+            error
+        );
+
+    }
+
+});
+
+</script>
+
+</body>
+</html>
