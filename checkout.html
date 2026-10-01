@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Checkout — Atelier Noura</title>
+  <meta name="description" content="إتمام طلب Atelier Noura.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css"><link rel="stylesheet" href="css/luxury.css"><script>try{if(localStorage.getItem("atelierTheme")==="dark")document.documentElement.classList.add("dark")}catch(e){}</script>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="index.html"><span class="brand-mark">AN</span><span><b>Atelier</b> Noura<small>HANDMADE STUDIO</small></span></a>
+  <nav class="nav" id="mainNav"><a href="index.html" data-i18n="home">الرئيسية</a><a href="products.html" data-i18n="shop">المتجر</a><a href="products.html?category=skirts" data-i18n="skirts">التنانير</a><a href="products.html?category=bags" data-i18n="bags">الحقائب</a><a href="products.html?category=accessories" data-i18n="accessories">الإكسسوارات</a><a href="index.html#story" data-i18n="story">من نحن</a></nav><div class="actions">
+    <button class="theme-btn" type="button" data-theme-toggle aria-label="Theme"><span class="t-sun">☀</span><span class="t-moon">☾</span></button><button class="lang-btn" id="langBtn" type="button">AR</button>
+    <a class="bag" href="cart.html">♡ <span id="cartCount">0</span></a>
+    <a class="text-link" href="cart.html">← العودة للسلة</a>
+  </div>
+</header>
+
+<main class="page checkout">
+  <div class="page-title">
+    <p class="eyebrow">CHECKOUT</p>
+    <h1>إتمام الطلب</h1>
+    <p>أكملي بياناتك وسنحسب تكلفة التوصيل حسب الولاية.</p>
+  </div>
+
+  <div class="checkout-layout">
+    <form id="checkoutForm" class="form-card">
+      <div class="form-section-title"><span>01</span><div><b>بيانات الزبون</b><small>معلومات التواصل الأساسية</small></div></div>
+      <div class="form-grid-two">
+        <label>الاسم الكامل *<input name="name" autocomplete="name" required></label>
+        <label>رقم الهاتف *<input name="phone" inputmode="tel" autocomplete="tel" required></label>
+      </div>
+      <label>البريد الإلكتروني <span class="optional">اختياري</span><input name="email" type="text" inputmode="email" autocomplete="email" placeholder="example@gmail.com"></label>
+
+      <div class="form-section-title"><span>02</span><div><b>التوصيل</b><small>اختاري الطريقة والولاية</small></div></div>
+      <label>الولاية *<select name="wilaya" id="wilaya" required><option value="">اختر الولاية</option></select></label>
+
+      <div class="delivery-choice-grid">
+        <label class="delivery-choice"><input type="radio" name="delivery_method" value="home" checked><span><strong>التوصيل إلى المنزل</strong><small>يصل الطلب إلى عنوانك</small></span></label>
+        <label class="delivery-choice"><input type="radio" name="delivery_method" value="office"><span><strong>مكتب التوصيل</strong><small>استلام من مكتب التوصيل</small></span></label>
+      </div>
+
+      <div id="address-group">
+        <label>العنوان <span class="home-only">للتوصيل إلى المنزل</span><textarea name="address" rows="4" placeholder="الحي، الشارع، رقم المنزل..." required></textarea></label>
+      </div>
+
+      <label>ملاحظات <span class="optional">اختياري</span><textarea name="notes" rows="3" placeholder="أي ملاحظة خاصة بالطلب..."></textarea></label>
+
+      <button class="btn btn-dark full" type="submit">تأكيد الطلب <span>↗</span></button>
+      <p class="form-note">بيانات الطلب تستخدم فقط لمعالجة الطلب والتوصيل.</p>
+    </form>
+
+    <aside id="checkoutSummary" class="summary-card"></aside>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script><script src="js/supabase.js"></script><script src="js/app.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/theme.js"></script>
+</body>
+</html>

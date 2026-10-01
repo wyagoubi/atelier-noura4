@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Owner Studio — Atelier Noura</title>
+  <meta name="description" content="لوحة إدارة Atelier Noura للمنتجات والطلبات والمبيعات والتوصيل.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="admin-body">
+
+<section id="loginView" class="owner-login">
+  <div class="owner-login-orb orb-a"></div><div class="owner-login-orb orb-b"></div>
+  <div class="owner-login-panel">
+    <div class="owner-login-brand"><span class="brand-mark">AN</span><div><b>Owner Studio</b><small>ATELIER NOURA</small></div></div>
+    <span class="eyebrow">PRIVATE ACCESS</span>
+    <h1>لوحة المالك</h1>
+    <p>مساحة هادئة لإدارة متجرك، طلباتك، منتجاتك ومؤشرات المبيعات.</p>
+    <form id="loginForm" class="admin-form">
+      <label>البريد الإلكتروني<input id="loginEmail" type="email" required autocomplete="email"></label>
+      <label>كلمة المرور<input id="loginPassword" type="password" required autocomplete="current-password"></label>
+      <button type="submit" class="admin-primary">دخول المالك <span>↗</span></button>
+      <div id="loginMessage" class="admin-message"></div>
+    </form>
+    <a href="index.html" class="owner-back">← العودة إلى المتجر</a>
+  </div>
+</section>
+
+<header class="admin-top">
+  <a class="brand" href="index.html"><span class="brand-mark">AN</span><span><b>Owner Studio</b><small>ATELIER NOURA</small></span></a>
+  <div class="admin-toolbar-actions"><span class="owner-status"><i></i> Secure session</span><button id="ownerTheme" class="admin-secondary" type="button" aria-label="تغيير المظهر">◐</button><span id="ownerEmail" class="owner-email"></span><a href="index.html" class="text-link">← الموقع</a><button id="logoutBtn" class="admin-secondary" type="button">تسجيل الخروج</button></div>
+</header>
+
+<main id="dashboardView" class="admin-shell" style="display:none">
+  <aside class="admin-nav">
+    <div class="admin-nav-top"><span class="admin-mini-logo">AN</span><div><b>ATELIER NOURA</b><small>OWNER STUDIO</small></div></div>
+    <span class="admin-nav-label">OVERVIEW</span>
+    <button class="admin-tab active" data-tab="overview" type="button"><span class="nav-icon">⌁</span><span>نظرة عامة</span></button>
+    <span class="admin-nav-label">MANAGEMENT</span>
+    <button class="admin-tab" data-tab="products" type="button"><span class="nav-icon">◇</span><span>المنتجات</span></button>
+    <button class="admin-tab" data-tab="orders" type="button"><span class="nav-icon">◌</span><span>الطلبات</span></button>
+    <button class="admin-tab" data-tab="delivery" type="button"><span class="nav-icon">⌁</span><span>التوصيل</span></button>
+    <button class="admin-tab" data-tab="media" type="button"><span class="nav-icon">▧</span><span>الصور والوسائط</span></button>
+    <span class="admin-nav-label">STORE</span>
+    <button class="admin-tab" data-tab="settings" type="button"><span class="nav-icon">⚙</span><span>الإعدادات</span></button>
+    <a class="admin-nav-site" href="index.html">↗ <span>عرض المتجر</span></a>
+    <div class="admin-nav-orb"></div>
+  </aside>
+
+  <section class="admin-content">
+    <div id="adminApp"></div>
+  </section>
+</main>
+
+<div id="productModal" class="admin-modal" aria-hidden="true">
+  <div class="admin-modal-box">
+    <div class="admin-modal-head"><div><span class="eyebrow">CATALOG EDITOR</span><h2 id="productModalTitle">إضافة منتج</h2></div><button class="admin-close" type="button" data-close-modal aria-label="إغلاق">×</button></div>
+    <form id="productForm" class="admin-form">
+      <input type="hidden" id="productId">
+      <div class="admin-grid"><label>اسم المنتج بالعربية<input id="nameAr" required></label><label>Nom du produit<input id="nameFr"></label><label>Product name<input id="nameEn"></label><label>السعر (DA)<input id="price" type="number" min="0" step="0.01" required></label><label>المخزون<input id="stock" type="number" min="0" step="1" value="0" required></label><label>التصنيف<select id="categoryId" required></select></label></div>
+      <div class="admin-grid"><label>الوصف بالعربية<textarea id="descAr" rows="4"></textarea></label><label>Description FR<textarea id="descFr" rows="4"></textarea></label><label>Description EN<textarea id="descEn" rows="4"></textarea></label></div>
+      <label class="check-row"><input id="featured" type="checkbox"> منتج مميز / Featured</label><label class="check-row"><input id="active" type="checkbox" checked> ظاهر في المتجر</label>
+      <div class="form-actions"><button class="admin-primary" type="submit">حفظ المنتج</button><button class="admin-secondary" type="button" data-close-modal>إلغاء</button></div><div id="productMessage" class="admin-message"></div>
+    </form>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/supabase.js"></script>
+<script src="js/admin.js"></script><script src="js/admin-live.js"></script>
+<script src="js/theme.js"></script>
+</body>
+</html>
