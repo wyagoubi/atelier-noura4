@@ -1,267 +1,318 @@
 /* =========================================================
    ATELIER NOURA
-   FINAL DATABASE FIX
-   Compatible with current bigint product schema
+   ORDER SYSTEM FIX
+   Non-destructive migration
    ========================================================= */
 
-create extension if not exists pgcrypto;
+
+/* =========================================================
+   1. ADD MISSING COLUMNS
+   ========================================================= */
+
+ALTER TABLE public.delivery_zones
+    ADD COLUMN IF NOT EXISTS wilaya_code text;
+
+ALTER TABLE public.delivery_zones
+    ADD COLUMN IF NOT EXISTS wilaya_name_ar text;
+
+ALTER TABLE public.delivery_zones
+    ADD COLUMN IF NOT EXISTS wilaya_name_fr text;
+
+ALTER TABLE public.delivery_zones
+    ADD COLUMN IF NOT EXISTS wilaya_name_en text;
+
+
+/* Orders */
+
+ALTER TABLE public.orders
+    ADD COLUMN IF NOT EXISTS customer_email text;
+
+ALTER TABLE public.orders
+    ADD COLUMN IF NOT EXISTS customer_phone text;
+
+ALTER TABLE public.orders
+    ADD COLUMN IF NOT EXISTS wilaya_code text;
+
+ALTER TABLE public.orders
+    ADD COLUMN IF NOT EXISTS wilaya_name text;
+
+
+/* Order items */
+
+ALTER TABLE public.order_items
+    ADD COLUMN IF NOT EXISTS product_name text;
+
+ALTER TABLE public.order_items
+    ADD COLUMN IF NOT EXISTS line_total numeric(12,2);
+
+
+/* Products */
+
+ALTER TABLE public.products
+    ADD COLUMN IF NOT EXISTS cover_image text;
+
+ALTER TABLE public.products
+    ADD COLUMN IF NOT EXISTS compare_at_price numeric(12,2);
+
+ALTER TABLE public.products
+    ADD COLUMN IF NOT EXISTS sku text;
+
+ALTER TABLE public.products
+    ADD COLUMN IF NOT EXISTS updated_at timestamptz
+    DEFAULT now();
+
+
+/* Product images */
+
+ALTER TABLE public.product_images
+    ADD COLUMN IF NOT EXISTS media_type text
+    DEFAULT 'image';
+
+ALTER TABLE public.product_images
+    ADD COLUMN IF NOT EXISTS alt_text text;
 
 
 /* =========================================================
-   1. CATEGORIES
-========================================================= */
+   2. NORMALIZE DELIVERY ZONES
+   ========================================================= */
 
-alter table public.categories
-    add column if not exists description_ar text;
-
-alter table public.categories
-    add column if not exists description_fr text;
-
-alter table public.categories
-    add column if not exists description_en text;
-
-alter table public.categories
-    add column if not exists image_url text;
-
-alter table public.categories
-    add column if not exists sort_order integer
-    not null default 0;
-
-alter table public.categories
-    add column if not exists is_active boolean
-    not null default true;
-
-
-/* =========================================================
-   2. PRODUCTS
-========================================================= */
-
-alter table public.products
-    add column if not exists slug text;
-
-alter table public.products
-    add column if not exists compare_at_price numeric(12,2);
-
-alter table public.products
-    add column if not exists cover_image text;
-
-alter table public.products
-    add column if not exists sku text;
-
-alter table public.products
-    add column if not exists updated_at timestamptz
-    not null default now();
-
-
-update public.products
-set slug =
-    'product-' || id::text
-where slug is null
-   or trim(slug) = '';
-
-
-create unique index if not exists
-    products_slug_unique_idx
-on public.products(slug);
-
-
-/* =========================================================
-   3. PRODUCT IMAGES
-========================================================= */
-
-alter table public.product_images
-    add column if not exists media_type text
-    not null default 'image';
-
-alter table public.product_images
-    add column if not exists alt_text text;
-
-alter table public.product_images
-    drop constraint if exists product_images_media_type_check;
-
-alter table public.product_images
-    add constraint product_images_media_type_check
-    check (
-        media_type in ('image','video')
-    );
-
-
-/* =========================================================
-   4. DELIVERY
-========================================================= */
-
-alter table public.delivery_zones
-    add column if not exists wilaya_code text;
-
-alter table public.delivery_zones
-    add column if not exists wilaya_name_ar text;
-
-alter table public.delivery_zones
-    add column if not exists wilaya_name_fr text;
-
-alter table public.delivery_zones
-    add column if not exists wilaya_name_en text;
-
-
-/*
-   Existing rows receive their old wilaya value
-   as the Arabic display name.
-*/
-
-update public.delivery_zones
-set wilaya_code =
-    coalesce(
-        nullif(wilaya_code,''),
-        id::text
-    )
-where wilaya_code is null
-   or trim(wilaya_code) = '';
-
-
-update public.delivery_zones
-set wilaya_name_ar =
-    coalesce(
-        nullif(wilaya_name_ar,''),
-        wilaya
-    )
-where wilaya_name_ar is null
-   or trim(wilaya_name_ar) = '';
-
-
-update public.delivery_zones
-set wilaya_name_fr =
-    coalesce(
-        nullif(wilaya_name_fr,''),
-        wilaya_name_ar
-    )
-where wilaya_name_fr is null
-   or trim(wilaya_name_fr) = '';
-
-
-update public.delivery_zones
-set wilaya_name_en =
-    coalesce(
-        nullif(wilaya_name_en,''),
-        wilaya_name_ar
-    )
-where wilaya_name_en is null
-   or trim(wilaya_name_en) = '';
-
-
-create index if not exists
-    delivery_zones_code_idx
-on public.delivery_zones(wilaya_code);
-
-
-/* =========================================================
-   5. ORDERS
-========================================================= */
-
-alter table public.orders
-    add column if not exists customer_email text;
-
-alter table public.orders
-    add column if not exists customer_phone text;
-
-alter table public.orders
-    add column if not exists wilaya_code text;
-
-alter table public.orders
-    add column if not exists wilaya_name text;
-
-alter table public.orders
-    add column if not exists updated_at timestamptz
-    not null default now();
-
-
-/*
-   Keep old columns compatible with existing data.
-*/
-
-update public.orders
-set customer_phone =
-    coalesce(
-        customer_phone,
-        phone
-    )
-where customer_phone is null;
-
-
-update public.orders
-set wilaya_code =
-    coalesce(
-        wilaya_code,
-        wilaya
-    )
-where wilaya_code is null;
-
-
-update public.orders
-set wilaya_name =
-    coalesce(
-        wilaya_name,
-        wilaya
-    )
-where wilaya_name is null;
-
-
-/* =========================================================
-   6. ORDER ITEMS
-========================================================= */
-
-alter table public.order_items
-    add column if not exists product_name text;
-
-alter table public.order_items
-    add column if not exists line_total numeric(12,2);
-
-
-update public.order_items oi
-set
-    product_name =
-        coalesce(
-            oi.product_name,
-            p.name_ar,
-            p.name_en,
-            p.name_fr,
-            'Product'
+UPDATE public.delivery_zones
+SET
+    wilaya_code =
+        COALESCE(
+            NULLIF(trim(wilaya_code), ''),
+            NULLIF(trim(wilaya), ''),
+            id::text
         ),
 
-    line_total =
-        coalesce(
-            oi.line_total,
-            oi.unit_price * oi.quantity
+    wilaya_name_ar =
+        COALESCE(
+            NULLIF(trim(wilaya_name_ar), ''),
+            NULLIF(trim(wilaya), ''),
+            NULLIF(trim(wilaya_code), ''),
+            id::text
         )
 
-from public.products p
-where p.id = oi.product_id;
+WHERE
+    wilaya_code IS NULL
+    OR trim(wilaya_code) = ''
+    OR wilaya_name_ar IS NULL
+    OR trim(wilaya_name_ar) = '';
 
 
 /* =========================================================
-   7. OWNER FUNCTION
-========================================================= */
+   3. SYNCHRONIZE OLD ORDER COLUMNS
+   ========================================================= */
 
-create or replace function public.is_owner()
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-    select exists (
-        select 1
-        from public.profiles
-        where id = auth.uid()
-        and role = 'owner'
+UPDATE public.orders
+SET
+    customer_phone =
+        COALESCE(
+            NULLIF(trim(customer_phone), ''),
+            NULLIF(trim(phone), '')
+        ),
+
+    phone =
+        COALESCE(
+            NULLIF(trim(phone), ''),
+            NULLIF(trim(customer_phone), '')
+        ),
+
+    wilaya_code =
+        COALESCE(
+            NULLIF(trim(wilaya_code), ''),
+            NULLIF(trim(wilaya), '')
+        ),
+
+    wilaya_name =
+        COALESCE(
+            NULLIF(trim(wilaya_name), ''),
+            NULLIF(trim(wilaya), ''),
+            NULLIF(trim(wilaya_code), '')
+        )
+
+WHERE
+    customer_phone IS NULL
+    OR phone IS NULL
+    OR wilaya_code IS NULL
+    OR wilaya_name IS NULL;
+
+
+/* =========================================================
+   4. OWNER CHECK FUNCTION
+   ========================================================= */
+
+CREATE OR REPLACE FUNCTION public.is_owner()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.profiles
+        WHERE id = auth.uid()
+          AND role = 'owner'
     );
 $$;
 
 
 /* =========================================================
-   8. FINAL PLACE ORDER FUNCTION
-========================================================= */
+   5. DELIVERY ZONES PUBLIC ACCESS
+   ========================================================= */
 
-drop function if exists public.place_order(
+ALTER TABLE public.delivery_zones
+ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public can view active delivery zones"
+ON public.delivery_zones;
+
+CREATE POLICY "Public can view active delivery zones"
+ON public.delivery_zones
+FOR SELECT
+TO anon, authenticated
+USING (
+    is_active = true
+);
+
+
+/* Owner can manage delivery zones */
+
+DROP POLICY IF EXISTS "Owner can manage delivery zones"
+ON public.delivery_zones;
+
+CREATE POLICY "Owner can manage delivery zones"
+ON public.delivery_zones
+FOR ALL
+TO authenticated
+USING (
+    public.is_owner()
+)
+WITH CHECK (
+    public.is_owner()
+);
+
+
+/* =========================================================
+   6. REMOVE OLD ORDER POLICIES
+   ========================================================= */
+
+DO $$
+DECLARE
+    policy_record record;
+BEGIN
+
+    FOR policy_record IN
+        SELECT
+            schemaname,
+            tablename,
+            policyname
+        FROM pg_policies
+        WHERE schemaname = 'public'
+          AND tablename IN (
+              'orders',
+              'order_items'
+          )
+    LOOP
+
+        EXECUTE format(
+            'DROP POLICY IF EXISTS %I ON %I.%I',
+            policy_record.policyname,
+            policy_record.schemaname,
+            policy_record.tablename
+        );
+
+    END LOOP;
+
+END
+$$;
+
+
+/* =========================================================
+   7. ENABLE RLS
+   ========================================================= */
+
+ALTER TABLE public.orders
+ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE public.order_items
+ENABLE ROW LEVEL SECURITY;
+
+
+/* =========================================================
+   8. OWNER ORDERS POLICIES
+   ========================================================= */
+
+CREATE POLICY "Owner can view orders"
+ON public.orders
+FOR SELECT
+TO authenticated
+USING (
+    public.is_owner()
+);
+
+
+CREATE POLICY "Owner can update orders"
+ON public.orders
+FOR UPDATE
+TO authenticated
+USING (
+    public.is_owner()
+)
+WITH CHECK (
+    public.is_owner()
+);
+
+
+CREATE POLICY "Owner can delete orders"
+ON public.orders
+FOR DELETE
+TO authenticated
+USING (
+    public.is_owner()
+);
+
+
+/* =========================================================
+   9. OWNER ORDER ITEMS POLICIES
+   ========================================================= */
+
+CREATE POLICY "Owner can view order items"
+ON public.order_items
+FOR SELECT
+TO authenticated
+USING (
+    public.is_owner()
+);
+
+
+CREATE POLICY "Owner can update order items"
+ON public.order_items
+FOR UPDATE
+TO authenticated
+USING (
+    public.is_owner()
+)
+WITH CHECK (
+    public.is_owner()
+);
+
+
+CREATE POLICY "Owner can delete order items"
+ON public.order_items
+FOR DELETE
+TO authenticated
+USING (
+    public.is_owner()
+);
+
+
+/* =========================================================
+   10. PLACE ORDER RPC
+   ========================================================= */
+
+DROP FUNCTION IF EXISTS public.place_order(
     text,
     text,
     text,
@@ -273,7 +324,7 @@ drop function if exists public.place_order(
 );
 
 
-create or replace function public.place_order(
+CREATE OR REPLACE FUNCTION public.place_order(
     p_address text,
     p_customer_email text,
     p_customer_name text,
@@ -283,13 +334,13 @@ create or replace function public.place_order(
     p_notes text,
     p_wilaya_code text
 )
-returns jsonb
-language plpgsql
-security definer
-set search_path = public, pg_temp
-as $$
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 
-declare
+DECLARE
 
     v_order_id uuid;
 
@@ -305,7 +356,7 @@ declare
 
     v_item jsonb;
 
-    v_product public.products%rowtype;
+    v_product public.products%ROWTYPE;
 
     v_product_id bigint;
 
@@ -313,168 +364,252 @@ declare
 
     v_line_total numeric(12,2);
 
-    v_zone public.delivery_zones%rowtype;
+    v_zone public.delivery_zones%ROWTYPE;
 
-begin
+    v_email text;
 
-    /* =====================================================
-       NAME
-    ===================================================== */
+    v_phone text;
 
-    if coalesce(
-        trim(p_customer_name),
-        ''
-    ) = '' then
-
-        raise exception
-            'اسم العميل مطلوب';
-
-    end if;
+    v_name text;
 
 
-    if length(
-        trim(p_customer_name)
-    ) < 2 then
-
-        raise exception
-            'اسم العميل قصير جدًا';
-
-    end if;
-
+BEGIN
 
     /* =====================================================
-       PHONE
-    ===================================================== */
+       CLEAN INPUT
+       ===================================================== */
 
-    if coalesce(
-        trim(p_customer_phone),
-        ''
-    ) = '' then
-
-        raise exception
-            'رقم الهاتف مطلوب';
-
-    end if;
+    v_name :=
+        trim(
+            coalesce(
+                p_customer_name,
+                ''
+            )
+        );
 
 
-    if trim(
-        p_customer_phone
-    ) !~ '^(0[567][0-9]{8}|\+213[567][0-9]{8})$' then
-
-        raise exception
-            'رقم الهاتف الجزائري غير صحيح';
-
-    end if;
-
-
-    /* =====================================================
-       OPTIONAL EMAIL
-    ===================================================== */
-
-    if coalesce(
-        trim(p_customer_email),
-        ''
-    ) <> '' then
-
-        if trim(
-            p_customer_email
-        ) !~* '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]{2,}$' then
-
-            raise exception
-                'البريد الإلكتروني غير صحيح';
-
-        end if;
-
-    end if;
-
-
-    /* =====================================================
-       DELIVERY METHOD
-    ===================================================== */
-
-    if p_delivery_method not in (
-        'home',
-        'office'
-    ) then
-
-        raise exception
-            'طريقة التوصيل غير صحيحة';
-
-    end if;
-
-
-    /* =====================================================
-       WILAYA
-    ===================================================== */
-
-    if coalesce(
-        trim(p_wilaya_code),
-        ''
-    ) = '' then
-
-        raise exception
-            'الولاية مطلوبة';
-
-    end if;
-
-
-    select *
-    into v_zone
-    from public.delivery_zones
-    where wilaya_code =
-        trim(p_wilaya_code)
-    and is_active = true
-    limit 1;
-
-
-    if not found then
-
-        raise exception
-            'الولاية غير متاحة للتوصيل';
-
-    end if;
-
-
-    v_wilaya_name =
-        coalesce(
-            v_zone.wilaya_name_ar,
-            v_zone.wilaya,
-            v_zone.wilaya_name_fr,
-            v_zone.wilaya_name_en,
+    v_email :=
+        nullif(
+            lower(
+                trim(
+                    coalesce(
+                        p_customer_email,
+                        ''
+                    )
+                )
+            ),
             ''
         );
 
 
+    v_phone :=
+        regexp_replace(
+            trim(
+                coalesce(
+                    p_customer_phone,
+                    ''
+                )
+            ),
+            '\s+',
+            '',
+            'g'
+        );
+
+
     /* =====================================================
-       DELIVERY FEE
-    ===================================================== */
+       NAME
+       ===================================================== */
 
-    if p_delivery_method = 'home' then
+    IF v_name = '' THEN
 
-        v_delivery_fee =
-            coalesce(
+        RAISE EXCEPTION
+            'اسم العميل مطلوب';
+
+    END IF;
+
+
+    IF length(v_name) < 2 THEN
+
+        RAISE EXCEPTION
+            'اسم العميل قصير جدًا';
+
+    END IF;
+
+
+    IF length(v_name) > 100 THEN
+
+        RAISE EXCEPTION
+            'اسم العميل طويل جدًا';
+
+    END IF;
+
+
+    /* =====================================================
+       EMAIL
+       OPTIONAL
+       ===================================================== */
+
+    IF v_email IS NOT NULL THEN
+
+        IF v_email !~*
+            '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]{2,}$'
+        THEN
+
+            RAISE EXCEPTION
+                'البريد الإلكتروني غير صحيح';
+
+        END IF;
+
+    END IF;
+
+
+    /* =====================================================
+       PHONE
+       ===================================================== */
+
+    IF v_phone = '' THEN
+
+        RAISE EXCEPTION
+            'رقم الهاتف مطلوب';
+
+    END IF;
+
+
+    IF v_phone !~
+        '^(0[567][0-9]{8}|\+213[567][0-9]{8})$'
+    THEN
+
+        RAISE EXCEPTION
+            'رقم الهاتف الجزائري غير صحيح';
+
+    END IF;
+
+
+    /* =====================================================
+       DELIVERY METHOD
+       ===================================================== */
+
+    IF p_delivery_method NOT IN (
+        'home',
+        'office'
+    )
+    THEN
+
+        RAISE EXCEPTION
+            'طريقة التوصيل غير صحيحة';
+
+    END IF;
+
+
+    /* =====================================================
+       WILAYA
+       ===================================================== */
+
+    IF trim(
+        coalesce(
+            p_wilaya_code,
+            ''
+        )
+    ) = ''
+    THEN
+
+        RAISE EXCEPTION
+            'الولاية مطلوبة';
+
+    END IF;
+
+
+    SELECT *
+    INTO v_zone
+
+    FROM public.delivery_zones
+
+    WHERE
+        trim(wilaya_code)
+        =
+        trim(p_wilaya_code)
+
+        AND is_active = true
+
+    LIMIT 1;
+
+
+    IF NOT FOUND THEN
+
+        RAISE EXCEPTION
+            'الولاية غير متاحة للتوصيل';
+
+    END IF;
+
+
+    /* =====================================================
+       WILAYA NAME
+       ===================================================== */
+
+    v_wilaya_name :=
+        COALESCE(
+            NULLIF(
+                trim(
+                    v_zone.wilaya_name_ar
+                ),
+                ''
+            ),
+
+            NULLIF(
+                trim(
+                    v_zone.wilaya
+                ),
+                ''
+            ),
+
+            NULLIF(
+                trim(
+                    v_zone.wilaya_name_fr
+                ),
+                ''
+            ),
+
+            NULLIF(
+                trim(
+                    v_zone.wilaya_name_en
+                ),
+                ''
+            ),
+
+            v_zone.wilaya_code
+        );
+
+
+    /* =====================================================
+       DELIVERY PRICE
+       ===================================================== */
+
+    IF p_delivery_method = 'home' THEN
+
+        v_delivery_fee :=
+            COALESCE(
                 v_zone.home_fee,
                 0
             );
 
-    else
+    ELSE
 
-        v_delivery_fee =
-            coalesce(
+        v_delivery_fee :=
+            COALESCE(
                 v_zone.office_fee,
                 0
             );
 
-    end if;
+    END IF;
 
 
     /* =====================================================
-       ADDRESS
-    ===================================================== */
+       HOME ADDRESS
+       ===================================================== */
 
-    if
-        p_delivery_method = 'home'
-        and length(
+    IF p_delivery_method = 'home' THEN
+
+        IF length(
             trim(
                 coalesce(
                     p_address,
@@ -482,52 +617,45 @@ begin
                 )
             )
         ) < 5
-    then
+        THEN
 
-        raise exception
-            'عنوان التوصيل مطلوب للتوصيل إلى المنزل';
+            RAISE EXCEPTION
+                'عنوان التوصيل مطلوب';
 
-    end if;
+        END IF;
+
+    END IF;
 
 
     /* =====================================================
        CART
-    ===================================================== */
+       ===================================================== */
 
-    if p_items is null then
+    IF p_items IS NULL
+       OR jsonb_typeof(p_items) <> 'array'
+       OR jsonb_array_length(p_items) = 0
+    THEN
 
-        raise exception
+        RAISE EXCEPTION
             'السلة فارغة';
 
-    end if;
-
-
-    if jsonb_typeof(
-        p_items
-    ) <> 'array' then
-
-        raise exception
-            'بيانات المنتجات غير صحيحة';
-
-    end if;
-
-
-    if jsonb_array_length(
-        p_items
-    ) = 0 then
-
-        raise exception
-            'السلة فارغة';
-
-    end if;
+    END IF;
 
 
     /* =====================================================
        ORDER NUMBER
-    ===================================================== */
+       ===================================================== */
 
-    v_order_number =
-        'AN-' ||
+    v_order_number :=
+        'AN-'
+        ||
+        to_char(
+            now(),
+            'YYYYMMDD'
+        )
+        ||
+        '-'
+        ||
         upper(
             substr(
                 replace(
@@ -536,32 +664,32 @@ begin
                     ''
                 ),
                 1,
-                10
+                6
             )
         );
 
 
     /* =====================================================
        CREATE ORDER
-    ===================================================== */
+       ===================================================== */
 
-    insert into public.orders (
-
+    INSERT INTO public.orders
+    (
         order_number,
 
         customer_name,
 
         customer_email,
 
-        phone,
-
         customer_phone,
 
-        wilaya,
+        phone,
 
         wilaya_code,
 
         wilaya_name,
+
+        wilaya,
 
         delivery_method,
 
@@ -575,63 +703,39 @@ begin
 
         total,
 
-        status,
-
-        updated_at
-
+        status
     )
 
-    values (
-
+    VALUES
+    (
         v_order_number,
 
-        trim(
-            p_customer_name
-        ),
+        v_name,
 
-        nullif(
-            lower(
-                trim(
-                    coalesce(
-                        p_customer_email,
-                        ''
-                    )
-                )
-            ),
-            ''
-        ),
+        v_email,
 
-        trim(
-            p_customer_phone
-        ),
+        v_phone,
 
-        trim(
-            p_customer_phone
-        ),
+        v_phone,
+
+        trim(p_wilaya_code),
 
         v_wilaya_name,
-
-        trim(
-            p_wilaya_code
-        ),
 
         v_wilaya_name,
 
         p_delivery_method,
 
-        case
-            when p_delivery_method =
-                'home'
-            then
-                trim(
-                    coalesce(
-                        p_address,
-                        ''
-                    )
+        CASE
+            WHEN p_delivery_method = 'home'
+            THEN trim(
+                coalesce(
+                    p_address,
+                    ''
                 )
-            else
-                ''
-        end,
+            )
+            ELSE ''
+        END,
 
         trim(
             coalesce(
@@ -646,115 +750,118 @@ begin
 
         0,
 
-        'new',
-
-        now()
-
+        'new'
     )
 
-    returning id
-    into v_order_id;
+    RETURNING id
+    INTO v_order_id;
 
 
     /* =====================================================
        ORDER ITEMS
-    ===================================================== */
+       ===================================================== */
 
-    for v_item in
-        select value
-        from jsonb_array_elements(
+    FOR v_item IN
+        SELECT value
+        FROM jsonb_array_elements(
             p_items
         )
-    loop
+    LOOP
 
-        begin
 
-            v_product_id =
+        BEGIN
+
+            v_product_id :=
                 (
-                    v_item
-                    ->>
-                    'product_id'
+                    v_item ->> 'product_id'
                 )::bigint;
 
-        exception
-            when others then
+        EXCEPTION
+            WHEN others THEN
 
-                raise exception
+                RAISE EXCEPTION
                     'معرف المنتج غير صحيح';
 
-        end;
+        END;
 
 
-        v_quantity =
-            coalesce(
+        BEGIN
+
+            v_quantity :=
                 (
-                    v_item
-                    ->>
-                    'quantity'
-                )::integer,
-                0
-            );
+                    v_item ->> 'quantity'
+                )::integer;
+
+        EXCEPTION
+            WHEN others THEN
+
+                RAISE EXCEPTION
+                    'كمية المنتج غير صحيحة';
+
+        END;
 
 
-        if v_quantity <= 0 then
+        IF v_quantity IS NULL
+           OR v_quantity <= 0
+           OR v_quantity > 99
+        THEN
 
-            raise exception
+            RAISE EXCEPTION
                 'كمية المنتج غير صحيحة';
 
-        end if;
+        END IF;
 
 
-        if v_quantity > 99 then
+        /* Lock product */
 
-            raise exception
-                'الكمية المطلوبة كبيرة جدًا';
+        SELECT *
+        INTO v_product
 
-        end if;
+        FROM public.products
 
+        WHERE id = v_product_id
 
-        select *
-        into v_product
-        from public.products
-        where id = v_product_id
-        for update;
+        FOR UPDATE;
 
 
-        if not found then
+        IF NOT FOUND THEN
 
-            raise exception
-                'أحد المنتجات غير موجود';
+            RAISE EXCEPTION
+                'أحد المنتجات في السلة غير موجود';
 
-        end if;
+        END IF;
 
 
-        if not v_product.is_active then
+        IF COALESCE(
+            v_product.is_active,
+            false
+        ) = false
+        THEN
 
-            raise exception
+            RAISE EXCEPTION
                 'أحد المنتجات غير متاح حاليًا';
 
-        end if;
+        END IF;
 
 
-        if coalesce(
+        IF COALESCE(
             v_product.stock,
             0
-        ) < v_quantity then
+        ) < v_quantity
+        THEN
 
-            raise exception
+            RAISE EXCEPTION
                 'الكمية المطلوبة غير متوفرة للمنتج: %',
-                coalesce(
-                    v_product.name_ar,
-                    v_product.name_en,
-                    v_product.name_fr,
-                    'Product'
-                );
+                v_product.name_ar;
 
-        end if;
+        END IF;
 
 
-        v_line_total =
+        /* Calculate item */
+
+        v_line_total :=
             round(
-                coalesce(
+                COALESCE(
                     v_product.price,
                     0
                 )
@@ -764,54 +871,57 @@ begin
             );
 
 
-        v_subtotal =
-            v_subtotal +
+        v_subtotal :=
+            v_subtotal
+            +
             v_line_total;
 
 
-        insert into public.order_items (
+        /* Insert item */
 
+        INSERT INTO public.order_items
+        (
             order_id,
 
             product_id,
 
             product_name,
 
-            unit_price,
-
             quantity,
 
-            line_total
+            unit_price,
 
+            line_total
         )
 
-        values (
-
+        VALUES
+        (
             v_order_id,
 
             v_product.id,
 
-            coalesce(
+            COALESCE(
                 v_product.name_ar,
-                v_product.name_en,
                 v_product.name_fr,
+                v_product.name_en,
                 'Product'
             ),
 
-            v_product.price,
-
             v_quantity,
 
-            v_line_total
+            v_product.price,
 
+            v_line_total
         );
 
 
-        update public.products
+        /* Reduce stock */
 
-        set
+        UPDATE public.products
+
+        SET
             stock =
-                coalesce(
+                COALESCE(
                     stock,
                     0
                 )
@@ -821,49 +931,46 @@ begin
             updated_at =
                 now()
 
-        where id =
-            v_product.id;
+        WHERE id = v_product.id;
 
-    end loop;
+
+    END LOOP;
 
 
     /* =====================================================
-       FINAL TOTAL
-    ===================================================== */
+       TOTAL
+       ===================================================== */
 
-    v_total =
+    v_total :=
         round(
-            v_subtotal +
+            v_subtotal
+            +
             v_delivery_fee,
             2
         );
 
 
-    update public.orders
+    /* =====================================================
+       UPDATE ORDER TOTAL
+       ===================================================== */
 
-    set
+    UPDATE public.orders
 
-        subtotal =
-            v_subtotal,
+    SET
+        subtotal = v_subtotal,
 
-        delivery_fee =
-            v_delivery_fee,
+        delivery_fee = v_delivery_fee,
 
-        total =
-            v_total,
+        total = v_total
 
-        updated_at =
-            now()
-
-    where id =
-        v_order_id;
+    WHERE id = v_order_id;
 
 
     /* =====================================================
-       RESPONSE
-    ===================================================== */
+       RETURN
+       ===================================================== */
 
-    return jsonb_build_object(
+    RETURN jsonb_build_object(
 
         'success',
         true,
@@ -894,16 +1001,18 @@ begin
 
     );
 
-end;
+
+END;
 
 $$;
 
 
 /* =========================================================
-   9. RPC PERMISSIONS
-========================================================= */
+   11. RPC SECURITY
+   ========================================================= */
 
-revoke all on function public.place_order(
+REVOKE ALL
+ON FUNCTION public.place_order(
     text,
     text,
     text,
@@ -913,10 +1022,11 @@ revoke all on function public.place_order(
     text,
     text
 )
-from public;
+FROM PUBLIC;
 
 
-grant execute on function public.place_order(
+GRANT EXECUTE
+ON FUNCTION public.place_order(
     text,
     text,
     text,
@@ -926,10 +1036,11 @@ grant execute on function public.place_order(
     text,
     text
 )
-to anon;
+TO anon;
 
 
-grant execute on function public.place_order(
+GRANT EXECUTE
+ON FUNCTION public.place_order(
     text,
     text,
     text,
@@ -939,504 +1050,23 @@ grant execute on function public.place_order(
     text,
     text
 )
-to authenticated;
+TO authenticated;
 
 
 /* =========================================================
-   10. RLS
-========================================================= */
+   12. OWNER FUNCTION SECURITY
+   ========================================================= */
 
-alter table public.profiles
-    enable row level security;
+REVOKE ALL
+ON FUNCTION public.is_owner()
+FROM PUBLIC;
 
-alter table public.categories
-    enable row level security;
 
-alter table public.products
-    enable row level security;
-
-alter table public.product_images
-    enable row level security;
-
-alter table public.delivery_zones
-    enable row level security;
-
-alter table public.orders
-    enable row level security;
-
-alter table public.order_items
-    enable row level security;
+GRANT EXECUTE
+ON FUNCTION public.is_owner()
+TO authenticated;
 
 
 /* =========================================================
-   11. REMOVE OLD POLICIES
-========================================================= */
-
-drop policy if exists
-    "public read active categories"
-on public.categories;
-
-drop policy if exists
-    "public read active products"
-on public.products;
-
-drop policy if exists
-    "public read product images"
-on public.product_images;
-
-drop policy if exists
-    "public read delivery zones"
-on public.delivery_zones;
-
-drop policy if exists
-    "owner read all orders"
-on public.orders;
-
-drop policy if exists
-    "owner update orders"
-on public.orders;
-
-drop policy if exists
-    "owner read order items"
-on public.order_items;
-
-drop policy if exists
-    "owner manage products"
-on public.products;
-
-drop policy if exists
-    "owner manage categories"
-on public.categories;
-
-drop policy if exists
-    "owner manage product images"
-on public.product_images;
-
-drop policy if exists
-    "owner manage delivery"
-on public.delivery_zones;
-
-drop policy if exists
-    "owner read profiles"
-on public.profiles;
-
-
-/* =========================================================
-   12. PUBLIC CATALOG POLICIES
-========================================================= */
-
-create policy
-    "public read active categories"
-on public.categories
-
-for select
-
-to anon, authenticated
-
-using (
-    is_active = true
-);
-
-
-create policy
-    "public read active products"
-on public.products
-
-for select
-
-to anon, authenticated
-
-using (
-    is_active = true
-);
-
-
-create policy
-    "public read product images"
-on public.product_images
-
-for select
-
-to anon, authenticated
-
-using (true);
-
-
-create policy
-    "public read delivery zones"
-on public.delivery_zones
-
-for select
-
-to anon, authenticated
-
-using (
-    is_active = true
-);
-
-
-/* =========================================================
-   13. OWNER POLICIES
-========================================================= */
-
-create policy
-    "owner read all orders"
-on public.orders
-
-for select
-
-to authenticated
-
-using (
-    (select public.is_owner())
-);
-
-
-create policy
-    "owner update orders"
-on public.orders
-
-for update
-
-to authenticated
-
-using (
-    (select public.is_owner())
-)
-
-with check (
-    (select public.is_owner())
-);
-
-
-create policy
-    "owner read order items"
-on public.order_items
-
-for select
-
-to authenticated
-
-using (
-    (select public.is_owner())
-);
-
-
-create policy
-    "owner manage products"
-on public.products
-
-for all
-
-to authenticated
-
-using (
-    (select public.is_owner())
-)
-
-with check (
-    (select public.is_owner())
-);
-
-
-create policy
-    "owner manage categories"
-on public.categories
-
-for all
-
-to authenticated
-
-using (
-    (select public.is_owner())
-)
-
-with check (
-    (select public.is_owner())
-);
-
-
-create policy
-    "owner manage product images"
-on public.product_images
-
-for all
-
-to authenticated
-
-using (
-    (select public.is_owner())
-)
-
-with check (
-    (select public.is_owner())
-);
-
-
-create policy
-    "owner manage delivery"
-on public.delivery_zones
-
-for all
-
-to authenticated
-
-using (
-    (select public.is_owner())
-)
-
-with check (
-    (select public.is_owner())
-);
-
-
-create policy
-    "owner read profiles"
-on public.profiles
-
-for select
-
-to authenticated
-
-using (
-    id = auth.uid()
-    or
-    (select public.is_owner())
-);
-
-
-/* =========================================================
-   14. GRANTS
-========================================================= */
-
-grant select
-on public.categories
-to anon, authenticated;
-
-grant select
-on public.products
-to anon, authenticated;
-
-grant select
-on public.product_images
-to anon, authenticated;
-
-grant select
-on public.delivery_zones
-to anon, authenticated;
-
-grant select
-on public.orders
-to authenticated;
-
-grant update
-on public.orders
-to authenticated;
-
-grant select
-on public.order_items
-to authenticated;
-
-grant select
-on public.profiles
-to authenticated;
-
-grant insert, update, delete
-on public.products
-to authenticated;
-
-grant insert, update, delete
-on public.categories
-to authenticated;
-
-grant insert, update, delete
-on public.product_images
-to authenticated;
-
-grant insert, update, delete
-on public.delivery_zones
-to authenticated;
-
-
-/* =========================================================
-   15. STORAGE BUCKET
-========================================================= */
-
-insert into storage.buckets (
-    id,
-    name,
-    public
-)
-
-values (
-    'product-media',
-    'product-media',
-    true
-)
-
-on conflict (id)
-
-do update set
-    public = true;
-
-
-/* =========================================================
-   16. STORAGE POLICIES
-========================================================= */
-
-drop policy if exists
-    "public read product media"
-on storage.objects;
-
-drop policy if exists
-    "owner upload product media"
-on storage.objects;
-
-drop policy if exists
-    "owner update product media"
-on storage.objects;
-
-drop policy if exists
-    "owner delete product media"
-on storage.objects;
-
-
-create policy
-    "public read product media"
-on storage.objects
-
-for select
-
-to public
-
-using (
-    bucket_id =
-    'product-media'
-);
-
-
-create policy
-    "owner upload product media"
-on storage.objects
-
-for insert
-
-to authenticated
-
-with check (
-    bucket_id =
-    'product-media'
-    and
-    (select public.is_owner())
-);
-
-
-create policy
-    "owner update product media"
-on storage.objects
-
-for update
-
-to authenticated
-
-using (
-    bucket_id =
-    'product-media'
-    and
-    (select public.is_owner())
-)
-
-with check (
-    bucket_id =
-    'product-media'
-    and
-    (select public.is_owner())
-);
-
-
-create policy
-    "owner delete product media"
-on storage.objects
-
-for delete
-
-to authenticated
-
-using (
-    bucket_id =
-    'product-media'
-    and
-    (select public.is_owner())
-);
-
-
-/* =========================================================
-   17. REALTIME
-========================================================= */
-
-do $$
-
-declare
-    t text;
-
-begin
-
-    foreach t in array array[
-        'products',
-        'product_images',
-        'orders'
-    ]
-
-    loop
-
-        if not exists (
-
-            select 1
-
-            from pg_publication_tables
-
-            where pubname =
-                'supabase_realtime'
-
-            and schemaname =
-                'public'
-
-            and tablename =
-                t
-
-        ) then
-
-            execute format(
-                'alter publication supabase_realtime add table public.%I',
-                t
-            );
-
-        end if;
-
-    end loop;
-
-end $$;
-
-
-/* =========================================================
-   18. CHECK
-========================================================= */
-
-select
-    p.oid::regprocedure
-        as function_signature,
-
-    pg_get_function_arguments(p.oid)
-        as arguments
-
-from pg_proc p
-
-join pg_namespace n
-    on n.oid = p.pronamespace
-
-where
-    n.nspname = 'public'
-
-and
-    p.proname =
-    'place_order';
+   END
+   ========================================================= */
