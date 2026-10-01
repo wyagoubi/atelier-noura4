@@ -1,2444 +1,3358 @@
-/* =========================================================
-   Atelier Noura
-   File: js/app.js
-   Version: FINAL FIX
-========================================================= */
+/* ============================================================
+   ATELIER NOURA - REAL STORE APP
+   FULL VERSION
+   Order system fixed
+============================================================ */
 
-(function () {
-    "use strict";
+let STORE_DB = null;
 
-    /* =====================================================
-       CONFIG
-    ===================================================== */
+let PRODUCTS = [];
 
-    const CART_KEY = "atelier_noura_cart";
-    const LAST_ORDER_KEY = "atelier_noura_last_order";
+let DELIVERY_ZONES = [];
 
-    let db = null;
+let realtimeStoreChannel = null;
 
-    let products = [];
-    let categories = [];
-    let deliveryZones = [];
+const SUPABASE_CDN =
+  "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
 
-    /* =====================================================
-       HELPERS
-    ===================================================== */
 
-    function $(selector, parent = document) {
-        return parent.querySelector(selector);
-    }
+/* ============================================================
+   HELPERS
+============================================================ */
 
-    function $$(selector, parent = document) {
-        return Array.from(parent.querySelectorAll(selector));
-    }
+const money = value =>
+  new Intl.NumberFormat(
+    "fr-DZ"
+  ).format(
+    Number(value || 0)
+  ) + " DA";
 
-    function escapeHTML(value) {
-        return String(value ?? "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
 
-    function normalizeText(value) {
-        return String(value || "")
-            .trim()
-            .replace(/\s+/g, " ");
-    }
+function escapeHtml(value = "") {
 
-    function formatPrice(value) {
-        return (
-            Number(value || 0).toLocaleString("fr-DZ") +
-            " DA"
-        );
-    }
+  return String(value).replace(
+    /[&<>'"]/g,
+    c => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      "'": "&#39;",
+      '"': "&quot;"
+    }[c])
+  );
+}
 
-    function language() {
-        return (
-            localStorage.getItem("atelier_noura_language") ||
-            localStorage.getItem("lang") ||
-            document.documentElement.lang ||
-            "ar"
-        );
-    }
 
-    function localized(item, field) {
-        if (!item) {
-            return "";
-        }
+function getLang() {
 
-        const lang = language();
+  return (
+    localStorage.getItem(
+      "lang"
+    ) || "ar"
+  );
+}
 
-        return (
-            item[`${field}_${lang}`] ||
-            item[`${field}_ar`] ||
-            item[`${field}_fr`] ||
-            item[`${field}_en`] ||
-            ""
-        );
-    }
 
-    function showMessage(message) {
-        alert(message);
-    }
+function getCart() {
 
-    /* =====================================================
-       SUPABASE
-    ===================================================== */
+  try {
 
-    async function initializeDatabase() {
-        /*
-         * مهم جدًا:
-         * initSupabase() في js/supabase.js هي async.
-         * لذلك يجب استعمال await.
-         */
-
-        if (typeof initSupabase !== "function") {
-            throw new Error(
-                "Supabase configuration file is missing."
-            );
-        }
-
-        db = await initSupabase();
-
-        if (!db) {
-            throw new Error(
-                "Supabase client could not be initialized."
-            );
-        }
-
-        return db;
-    }
-
-    /* =====================================================
-       IMAGE
-    ===================================================== */
-
-    function getImageUrl(path) {
-        if (!path) {
-            return "";
-        }
-
-        const cleanPath = String(path).trim();
-
-        if (
-            cleanPath.startsWith("http://") ||
-            cleanPath.startsWith("https://") ||
-            cleanPath.startsWith("data:")
-        ) {
-            return cleanPath;
-        }
-
-        if (!db) {
-            return "";
-        }
-
-        const result = db.storage
-            .from("product-media")
-            .getPublicUrl(cleanPath);
-
-        return result?.data?.publicUrl || "";
-    }
-
-    function productImage(product) {
-        if (!product) {
-            return "";
-        }
-
-        /*
-         * أولاً: cover_image إذا كان موجودًا.
-         */
-        if (product.cover_image) {
-            return getImageUrl(product.cover_image);
-        }
-
-        /*
-         * ثانيًا: product_images.
-         */
-        const images = Array.isArray(product.product_images)
-            ? product.product_images
-            : [];
-
-        if (!images.length) {
-            return "";
-        }
-
-        const cover =
-            images.find(
-                image =>
-                    image &&
-                    (
-                        image.is_cover === true ||
-                        image.is_cover === "true"
-                    )
-            ) ||
-            [...images].sort(
-                (a, b) =>
-                    Number(a.sort_order || 0) -
-                    Number(b.sort_order || 0)
-            )[0];
-
-        return getImageUrl(
-            cover?.storage_path
-        );
-    }
-
-    /* =====================================================
-       CART
-    ===================================================== */
-
-    function getCart() {
-        try {
-            const raw = localStorage.getItem(CART_KEY);
-
-            if (!raw) {
-                return [];
-            }
-
-            const data = JSON.parse(raw);
-
-            return Array.isArray(data)
-                ? data
-                : [];
-
-        } catch {
-            return [];
-        }
-    }
-
-    function saveCart(cart) {
-        localStorage.setItem(
-            CART_KEY,
-            JSON.stringify(cart)
-        );
-
-        updateCartCount();
-        renderCart();
-    }
-
-    function clearCart() {
-        localStorage.removeItem(CART_KEY);
-        updateCartCount();
-        renderCart();
-    }
-
-    function updateCartCount() {
-        const count = getCart().reduce(
-            (sum, item) =>
-                sum + Number(item.quantity || 0),
-            0
-        );
-
-        $$("#cartCount, #cart-count, .cart-count")
-            .forEach(element => {
-                element.textContent = String(count);
-            });
-    }
-
-    function addToCart(productId, quantity = 1) {
-        const product = products.find(
-            item =>
-                String(item.id) ===
-                String(productId)
-        );
-
-        if (!product) {
-            showMessage(
-                "المنتج غير موجود."
-            );
-            return;
-        }
-
-        const stock = Number(
-            product.stock || 0
-        );
-
-        if (stock <= 0) {
-            showMessage(
-                "هذا المنتج غير متوفر حاليًا."
-            );
-            return;
-        }
-
-        const cart = getCart();
-
-        const existing = cart.find(
-            item =>
-                String(item.product_id) ===
-                String(product.id)
-        );
-
-        const requested = Math.max(
-            1,
-            Number(quantity || 1)
-        );
-
-        if (existing) {
-            const next =
-                Number(existing.quantity) +
-                requested;
-
-            if (next > stock) {
-                showMessage(
-                    `المتوفر فقط ${stock} قطعة.`
-                );
-                return;
-            }
-
-            existing.quantity = next;
-
-        } else {
-            cart.push({
-                product_id: product.id,
-                quantity: Math.min(
-                    requested,
-                    stock
-                )
-            });
-        }
-
-        saveCart(cart);
-
-        showMessage(
-            "تمت إضافة المنتج إلى السلة."
-        );
-    }
-
-    function removeCartItem(productId) {
-        const cart = getCart().filter(
-            item =>
-                String(item.product_id) !==
-                String(productId)
-        );
-
-        saveCart(cart);
-    }
-
-    function updateCartItem(
-        productId,
-        quantity
-    ) {
-        const cart = getCart();
-
-        const item = cart.find(
-            entry =>
-                String(entry.product_id) ===
-                String(productId)
-        );
-
-        if (!item) {
-            return;
-        }
-
-        const product = products.find(
-            entry =>
-                String(entry.id) ===
-                String(productId)
-        );
-
-        const stock = Number(
-            product?.stock || 0
-        );
-
-        let next = Number(
-            quantity || 0
-        );
-
-        if (next <= 0) {
-            removeCartItem(productId);
-            return;
-        }
-
-        if (
-            stock > 0 &&
-            next > stock
-        ) {
-            next = stock;
-
-            showMessage(
-                `المتوفر فقط ${stock} قطعة.`
-            );
-        }
-
-        item.quantity = next;
-
-        saveCart(cart);
-    }
-
-    /* =====================================================
-       LOAD PRODUCTS
-    ===================================================== */
-
-    async function loadProducts() {
-        if (!db) {
-            throw new Error(
-                "Supabase is not initialized."
-            );
-        }
-
-        /*
-         * نستخدم الأعمدة الموجودة في قاعدة البيانات.
-         * product_images يتم تحميلها مع المنتج.
-         */
-
-        const {
-            data,
-            error
-        } = await db
-            .from("products")
-            .select(`
-                *,
-                categories (
-                    id,
-                    slug,
-                    name_ar,
-                    name_fr,
-                    name_en
-                ),
-                product_images (
-                    id,
-                    storage_path,
-                    media_type,
-                    alt_text,
-                    sort_order,
-                    is_cover
-                )
-            `)
-            .eq(
-                "is_active",
-                true
-            )
-            .order(
-                "created_at",
-                {
-                    ascending: false
-                }
-            );
-
-        if (error) {
-            console.error(
-                "Products error:",
-                error
-            );
-
-            /*
-             * محاولة ثانية أبسط.
-             * إذا كانت product_images لا تحتوي أحد الأعمدة
-             * الإضافية، لن نوقف المتجر كله.
-             */
-
-            const fallback =
-                await db
-                    .from("products")
-                    .select(`
-                        *,
-                        categories (
-                            id,
-                            slug,
-                            name_ar,
-                            name_fr,
-                            name_en
-                        )
-                    `)
-                    .eq(
-                        "is_active",
-                        true
-                    )
-                    .order(
-                        "created_at",
-                        {
-                            ascending: false
-                        }
-                    );
-
-            if (fallback.error) {
-                throw fallback.error;
-            }
-
-            products = fallback.data || [];
-
-            return products;
-        }
-
-        products = data || [];
-
-        return products;
-    }
-
-    async function loadCategories() {
-        if (!db) {
-            return [];
-        }
-
-        /*
-         * محاولة القراءة بالشكل الكامل.
-         */
-
-        let result = await db
-            .from("categories")
-            .select("*")
-            .eq(
-                "is_active",
-                true
-            )
-            .order(
-                "sort_order",
-                {
-                    ascending: true
-                }
-            );
-
-        /*
-         * إذا كانت قاعدة البيانات القديمة لا تحتوي
-         * sort_order أو is_active، نجرب قراءة أبسط.
-         */
-
-        if (result.error) {
-            result = await db
-                .from("categories")
-                .select("*")
-                .order(
-                    "created_at",
-                    {
-                        ascending: true
-                    }
-                );
-        }
-
-        if (result.error) {
-            console.error(
-                "Categories error:",
-                result.error
-            );
-
-            categories = [];
-            return [];
-        }
-
-        categories = result.data || [];
-
-        return categories;
-    }
-
-    async function loadDeliveryZones() {
-        if (!db) {
-            return [];
-        }
-
-        let result = await db
-            .from("delivery_zones")
-            .select("*")
-            .eq(
-                "is_active",
-                true
-            )
-            .order(
-                "wilaya_code",
-                {
-                    ascending: true
-                }
-            );
-
-        if (result.error) {
-            /*
-             * دعم schema القديم.
-             */
-            result = await db
-                .from("delivery_zones")
-                .select("*")
-                .eq(
-                    "is_active",
-                    true
-                )
-                .order(
-                    "wilaya",
-                    {
-                        ascending: true
-                    }
-                );
-        }
-
-        if (result.error) {
-            console.error(
-                "Delivery error:",
-                result.error
-            );
-
-            deliveryZones = [];
-            return [];
-        }
-
-        deliveryZones = result.data || [];
-
-        return deliveryZones;
-    }
-
-    /* =====================================================
-       PRODUCT CARD
-    ===================================================== */
-
-    function productCard(product) {
-        const name =
-            localized(
-                product,
-                "name"
-            ) ||
-            "Atelier Noura";
-
-        const category =
-            localized(
-                product.categories,
-                "name"
-            );
-
-        const image =
-            productImage(product);
-
-        const stock =
-            Number(product.stock || 0);
-
-        const featured =
-            product.is_featured === true;
-
-        return `
-            <article
-                class="product-card"
-                data-product-id="${escapeHTML(product.id)}"
-            >
-
-                <a
-                    class="product-card-image"
-                    href="product.html?id=${encodeURIComponent(product.id)}"
-                    aria-label="${escapeHTML(name)}"
-                >
-
-                    ${
-                        image
-                            ? `
-                                <img
-                                    src="${escapeHTML(image)}"
-                                    alt="${escapeHTML(name)}"
-                                    loading="lazy"
-                                >
-                            `
-                            : `
-                                <div class="product-image-placeholder">
-                                    Atelier Noura
-                                </div>
-                            `
-                    }
-
-                    ${
-                        featured
-                            ? `
-                                <span class="product-badge">
-                                    مميز
-                                </span>
-                            `
-                            : ""
-                    }
-
-                </a>
-
-                <div class="product-card-content">
-
-                    ${
-                        category
-                            ? `
-                                <span class="product-category">
-                                    ${escapeHTML(category)}
-                                </span>
-                            `
-                            : ""
-                    }
-
-                    <h3 class="product-title">
-                        <a
-                            href="product.html?id=${encodeURIComponent(product.id)}"
-                        >
-                            ${escapeHTML(name)}
-                        </a>
-                    </h3>
-
-                    <div class="product-price">
-                        ${formatPrice(product.price)}
-                    </div>
-
-                    <button
-                        type="button"
-                        class="add-to-cart-btn"
-                        data-add-to-cart="${escapeHTML(product.id)}"
-                        ${stock <= 0 ? "disabled" : ""}
-                    >
-                        ${
-                            stock > 0
-                                ? "أضف إلى السلة"
-                                : "غير متوفر"
-                        }
-                    </button>
-
-                </div>
-
-            </article>
-        `;
-    }
-
-    function renderProducts(
-        list = products,
-        target = null
-    ) {
-        target =
-            target ||
-            $(
-                "[data-products], #products-grid, #productsGrid, .products-grid"
-            );
-
-        if (!target) {
-            return;
-        }
-
-        if (!Array.isArray(list) || !list.length) {
-            target.innerHTML = `
-                <div class="empty-state">
-                    لا توجد منتجات متاحة حاليًا.
-                </div>
-            `;
-
-            return;
-        }
-
-        target.innerHTML =
-            list
-                .map(productCard)
-                .join("");
-    }
-
-    /* =====================================================
-       FEATURED PRODUCTS
-    ===================================================== */
-
-    function renderFeatured() {
-        const targets = [
-            "[data-featured-products]",
-            "#featured-products",
-            "#featuredProducts",
-            ".featured-products"
-        ];
-
-        let target = null;
-
-        for (const selector of targets) {
-            target = $(selector);
-
-            if (target) {
-                break;
-            }
-        }
-
-        if (!target) {
-            return;
-        }
-
-        const featured =
-            products.filter(
-                product =>
-                    product.is_featured === true
-            );
-
-        renderProducts(
-            featured.length
-                ? featured
-                : products.slice(0, 8),
-            target
-        );
-    }
-
-    /* =====================================================
-       NEW ARRIVALS
-    ===================================================== */
-
-    function renderNewArrivals() {
-        const targets = [
-            "[data-new-arrivals]",
-            "#new-arrivals",
-            "#newArrivals",
-            "#new-arrivals-products",
-            "#newArrivalsProducts",
-            ".new-arrivals",
-            ".new-arrivals-products"
-        ];
-
-        let target = null;
-
-        for (const selector of targets) {
-            target = $(selector);
-
-            if (target) {
-                break;
-            }
-        }
-
-        if (!target) {
-            return;
-        }
-
-        /*
-         * loadProducts() يرتب المنتجات:
-         * created_at DESC
-         *
-         * لذلك أول المنتجات هي الأحدث.
-         */
-
-        const newest =
-            [...products]
-                .sort(
-                    (a, b) =>
-                        new Date(
-                            b.created_at || 0
-                        ) -
-                        new Date(
-                            a.created_at || 0
-                        )
-                )
-                .slice(0, 8);
-
-        renderProducts(
-            newest,
-            target
-        );
-    }
-
-    /* =====================================================
-       PRODUCT DETAILS
-    ===================================================== */
-
-    async function renderProductDetails() {
-        const target =
-            $("#productDetail");
-
-        if (!target) {
-            return;
-        }
-
-        const params =
-            new URLSearchParams(
-                window.location.search
-            );
-
-        const id =
-            params.get("id");
-
-        const slug =
-            params.get("slug");
-
-        if (!id && !slug) {
-            target.innerHTML = `
-                <div class="empty-state">
-                    المنتج غير محدد.
-                </div>
-            `;
-
-            return;
-        }
-
-        let product =
-            products.find(
-                item =>
-                    id &&
-                    String(item.id) ===
-                    String(id)
-            );
-
-        if (!product && slug) {
-            product =
-                products.find(
-                    item =>
-                        item.slug === slug
-                );
-        }
-
-        /*
-         * إذا لم نجده في المنتجات المحملة،
-         * نحاول جلبه مباشرة من Supabase.
-         */
-
-        if (!product && id) {
-            const {
-                data,
-                error
-            } = await db
-                .from("products")
-                .select(`
-                    *,
-                    categories (
-                        id,
-                        slug,
-                        name_ar,
-                        name_fr,
-                        name_en
-                    ),
-                    product_images (
-                        id,
-                        storage_path,
-                        media_type,
-                        alt_text,
-                        sort_order,
-                        is_cover
-                    )
-                `)
-                .eq(
-                    "id",
-                    id
-                )
-                .eq(
-                    "is_active",
-                    true
-                )
-                .maybeSingle();
-
-            if (!error && data) {
-                product = data;
-            }
-        }
-
-        if (!product) {
-            target.innerHTML = `
-                <div class="empty-state">
-                    المنتج غير موجود أو لم يعد متاحًا.
-                </div>
-            `;
-
-            return;
-        }
-
-        const name =
-            localized(
-                product,
-                "name"
-            ) ||
-            "Atelier Noura";
-
-        const description =
-            localized(
-                product,
-                "description"
-            );
-
-        const image =
-            productImage(product);
-
-        const stock =
-            Number(product.stock || 0);
-
-        target.innerHTML = `
-            <div
-                class="product-detail"
-                style="
-                    display:grid;
-                    grid-template-columns:
-                        minmax(0,1fr)
-                        minmax(0,1fr);
-                    gap:40px;
-                    max-width:1100px;
-                    margin:50px auto;
-                    padding:0 20px;
-                "
-            >
-
-                <div>
-
-                    ${
-                        image
-                            ? `
-                                <img
-                                    src="${escapeHTML(image)}"
-                                    alt="${escapeHTML(name)}"
-                                    style="
-                                        width:100%;
-                                        max-height:650px;
-                                        object-fit:cover;
-                                        border-radius:25px;
-                                    "
-                                >
-                            `
-                            : `
-                                <div
-                                    style="
-                                        min-height:500px;
-                                        display:grid;
-                                        place-items:center;
-                                        background:#eee8e1;
-                                        border-radius:25px;
-                                    "
-                                >
-                                    Atelier Noura
-                                </div>
-                            `
-                    }
-
-                </div>
-
-                <div>
-
-                    <span
-                        style="
-                            color:#88796d;
-                            font-size:13px;
-                        "
-                    >
-                        ${escapeHTML(
-                            localized(
-                                product.categories,
-                                "name"
-                            )
-                        )}
-                    </span>
-
-                    <h1>
-                        ${escapeHTML(name)}
-                    </h1>
-
-                    <div
-                        style="
-                            font-size:24px;
-                            font-weight:700;
-                            margin:20px 0;
-                        "
-                    >
-                        ${formatPrice(product.price)}
-                    </div>
-
-                    <p
-                        style="
-                            line-height:2;
-                            color:#6e665f;
-                        "
-                    >
-                        ${escapeHTML(description)}
-                    </p>
-
-                    ${
-                        stock > 0
-                            ? `
-                                <p>
-                                    المتوفر:
-                                    <strong>
-                                        ${stock}
-                                    </strong>
-                                </p>
-
-                                <div
-                                    style="
-                                        display:flex;
-                                        gap:10px;
-                                        margin-top:20px;
-                                    "
-                                >
-
-                                    <input
-                                        id="product-quantity"
-                                        type="number"
-                                        min="1"
-                                        max="${stock}"
-                                        value="1"
-                                        style="
-                                            width:90px;
-                                            padding:13px;
-                                            border:1px solid #ddd;
-                                            border-radius:12px;
-                                        "
-                                    >
-
-                                    <button
-                                        type="button"
-                                        class="add-to-cart-btn"
-                                        data-product-add="${escapeHTML(product.id)}"
-                                    >
-                                        أضف إلى السلة
-                                    </button>
-
-                                </div>
-                            `
-                            : `
-                                <p>
-                                    هذا المنتج غير متوفر حاليًا.
-                                </p>
-                            `
-                    }
-
-                </div>
-
-            </div>
-        `;
-
-        document.title =
-            `${name} — Atelier Noura`;
-    }
-
-    /* =====================================================
-       CART PAGE
-    ===================================================== */
-
-    function renderCart() {
-        const target =
-            $(
-                "#cartItems, [data-cart-items]"
-            );
-
-        if (!target) {
-            return;
-        }
-
-        const cart =
-            getCart();
-
-        if (!cart.length) {
-            target.innerHTML = `
-                <div class="empty-state">
-                    السلة فارغة.
-                </div>
-            `;
-
-            updateCartTotals(0);
-
-            return;
-        }
-
-        let subtotal = 0;
-
-        target.innerHTML =
-            cart
-                .map(item => {
-
-                    const product =
-                        products.find(
-                            product =>
-                                String(product.id) ===
-                                String(item.product_id)
-                        );
-
-                    if (!product) {
-                        return "";
-                    }
-
-                    const quantity =
-                        Number(
-                            item.quantity || 1
-                        );
-
-                    const line =
-                        Number(
-                            product.price || 0
-                        ) *
-                        quantity;
-
-                    subtotal += line;
-
-                    const image =
-                        productImage(product);
-
-                    const name =
-                        localized(
-                            product,
-                            "name"
-                        );
-
-                    return `
-                        <div
-                            class="cart-item"
-                            style="
-                                display:flex;
-                                gap:15px;
-                                align-items:center;
-                                margin-bottom:15px;
-                            "
-                        >
-
-                            ${
-                                image
-                                    ? `
-                                        <img
-                                            src="${escapeHTML(image)}"
-                                            alt="${escapeHTML(name)}"
-                                            style="
-                                                width:90px;
-                                                height:100px;
-                                                object-fit:cover;
-                                                border-radius:15px;
-                                            "
-                                        >
-                                    `
-                                    : ""
-                            }
-
-                            <div
-                                style="
-                                    flex:1;
-                                "
-                            >
-
-                                <h3>
-                                    ${escapeHTML(name)}
-                                </h3>
-
-                                <p>
-                                    ${formatPrice(product.price)}
-                                </p>
-
-                                <div>
-
-                                    <button
-                                        type="button"
-                                        data-cart-minus="${escapeHTML(product.id)}"
-                                    >
-                                        −
-                                    </button>
-
-                                    <input
-                                        data-cart-quantity="${escapeHTML(product.id)}"
-                                        type="number"
-                                        min="1"
-                                        max="${product.stock}"
-                                        value="${quantity}"
-                                        style="width:55px"
-                                    >
-
-                                    <button
-                                        type="button"
-                                        data-cart-plus="${escapeHTML(product.id)}"
-                                    >
-                                        +
-                                    </button>
-
-                                    <button
-                                        type="button"
-                                        data-cart-remove="${escapeHTML(product.id)}"
-                                    >
-                                        حذف
-                                    </button>
-
-                                </div>
-
-                            </div>
-
-                            <strong>
-                                ${formatPrice(line)}
-                            </strong>
-
-                        </div>
-                    `;
-                })
-                .join("");
-
-        updateCartTotals(subtotal);
-    }
-
-    function updateCartTotals(subtotal) {
-        const subtotalElement =
-            $(
-                "#cartSubtotal, [data-cart-subtotal]"
-            );
-
-        const totalElement =
-            $(
-                "#cartTotal, [data-cart-total]"
-            );
-
-        if (subtotalElement) {
-            subtotalElement.textContent =
-                formatPrice(subtotal);
-        }
-
-        if (totalElement) {
-            totalElement.textContent =
-                formatPrice(subtotal);
-        }
-    }
-
-    /* =====================================================
-       CHECKOUT
-    ===================================================== */
-
-    function getCheckoutInputs() {
-        return {
-            form:
-                $(
-                    "#checkout-form, #checkoutForm, #order-form"
-                ),
-
-            name:
-                $(
-                    "#customer-name, #customerName, input[name='customer_name']"
-                ),
-
-            phone:
-                $(
-                    "#customer-phone, #customerPhone, input[name='customer_phone']"
-                ),
-
-            email:
-                $(
-                    "#customer-email, #customerEmail, input[name='customer_email']"
-                ),
-
-            wilaya:
-                $(
-                    "#wilaya, select[name='wilaya_code']"
-                ),
-
-            delivery:
-                $(
-                    "#delivery-method, #deliveryMethod, select[name='delivery_method']"
-                ),
-
-            address:
-                $(
-                    "#address, textarea[name='address']"
-                ),
-
-            notes:
-                $(
-                    "#notes, textarea[name='notes']"
-                ),
-
-            message:
-                $(
-                    "#checkout-message"
-                )
-        };
-    }
-
-    function showCheckoutMessage(message) {
-        const element =
-            $("#checkout-message");
-
-        if (!element) {
-            alert(message);
-            return;
-        }
-
-        element.textContent = message;
-
-        element.classList.add(
-            "show"
-        );
-    }
-
-    function hideCheckoutMessage() {
-        $("#checkout-message")
-            ?.classList.remove(
-                "show"
-            );
-    }
-
-    function validateName(value) {
-        const name =
-            normalizeText(value);
-
-        if (!name) {
-            return {
-                valid: false,
-                message:
-                    "الاسم مطلوب."
-            };
-        }
-
-        if (
-            name.length < 3 ||
-            name.length > 60
-        ) {
-            return {
-                valid: false,
-                message:
-                    "اكتب اسمًا صحيحًا من 3 أحرف على الأقل."
-            };
-        }
-
-        const regex =
-            /^[\p{L}\p{M}]+(?:[\s'-][\p{L}\p{M}]+)*$/u;
-
-        if (!regex.test(name)) {
-            return {
-                valid: false,
-                message:
-                    "اكتب اسمًا صحيحًا بدون أرقام أو رموز."
-            };
-        }
-
-        return {
-            valid: true,
-            value: name
-        };
-    }
-
-    function validatePhone(value) {
-        const phone =
-            String(value || "")
-                .trim()
-                .replace(/[\s-]/g, "");
-
-        const regex =
-            /^(0[567][0-9]{8}|\+213[567][0-9]{8})$/;
-
-        if (!phone) {
-            return {
-                valid: false,
-                message:
-                    "رقم الهاتف مطلوب."
-            };
-        }
-
-        if (!regex.test(phone)) {
-            return {
-                valid: false,
-                message:
-                    "أدخل رقم هاتف جزائري صحيح مثل 0550123456."
-            };
-        }
-
-        return {
-            valid: true,
-            value: phone
-        };
-    }
-
-    /*
-     * البريد الإلكتروني اختياري.
-     */
-    function validateEmail(value) {
-        const email =
-            String(value || "")
-                .trim();
-
-        if (!email) {
-            return {
-                valid: true,
-                value: null
-            };
-        }
-
-        const regex =
-            /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-        if (!regex.test(email)) {
-            return {
-                valid: false,
-                message:
-                    "إذا أدخلت بريدًا إلكترونيًا، يجب أن يكون صحيحًا مثل example@gmail.com."
-            };
-        }
-
-        return {
-            valid: true,
-            value:
-                email.toLowerCase()
-        };
-    }
-
-    function renderWilayas() {
-        const select =
-            $("#wilaya");
-
-        if (!select) {
-            return;
-        }
-
-        select.innerHTML = `
-            <option value="">
-                اختر الولاية
-            </option>
-        `;
-
-        deliveryZones.forEach(
-            zone => {
-
-                const code =
-                    zone.wilaya_code ||
-                    zone.code ||
-                    zone.wilaya;
-
-                const name =
-                    zone.wilaya_name_ar ||
-                    zone.wilaya ||
-                    zone.wilaya_name_fr ||
-                    zone.wilaya_name_en ||
-                    code;
-
-                if (!code) {
-                    return;
-                }
-
-                const option =
-                    document.createElement(
-                        "option"
-                    );
-
-                option.value =
-                    code;
-
-                option.textContent =
-                    name;
-
-                select.appendChild(
-                    option
-                );
-            }
-        );
-    }
-
-    function getDeliveryMethod() {
-        return (
-            $(
-                "#delivery-method, #deliveryMethod"
-            )?.value ||
-            "home"
-        );
-    }
-
-    function selectedZone() {
-        const code =
-            $("#wilaya")
-                ?.value;
-
-        if (!code) {
-            return null;
-        }
-
-        return deliveryZones.find(
-            zone => {
-                const zoneCode =
-                    zone.wilaya_code ||
-                    zone.code ||
-                    zone.wilaya;
-
-                return (
-                    String(zoneCode) ===
-                    String(code)
-                );
-            }
-        );
-    }
-
-    function checkoutSubtotal() {
-        return getCart().reduce(
-            (sum, item) => {
-
-                const product =
-                    products.find(
-                        p =>
-                            String(p.id) ===
-                            String(item.product_id)
-                    );
-
-                if (!product) {
-                    return sum;
-                }
-
-                return (
-                    sum +
-                    Number(product.price || 0) *
-                    Number(item.quantity || 0)
-                );
-
-            },
-            0
-        );
-    }
-
-    function updateCheckoutTotal() {
-        const subtotal =
-            checkoutSubtotal();
-
-        const zone =
-            selectedZone();
-
-        const method =
-            getDeliveryMethod();
-
-        let deliveryFee = 0;
-
-        if (zone) {
-            deliveryFee =
-                method === "office"
-                    ? Number(
-                        zone.office_fee || 0
-                    )
-                    : Number(
-                        zone.home_fee || 0
-                    );
-        }
-
-        const total =
-            subtotal +
-            deliveryFee;
-
-        const subtotalElement =
-            $("#checkout-subtotal");
-
-        const deliveryElement =
-            $("#checkout-delivery");
-
-        const totalElement =
-            $("#checkout-total");
-
-        if (subtotalElement) {
-            subtotalElement.textContent =
-                formatPrice(subtotal);
-        }
-
-        if (deliveryElement) {
-            deliveryElement.textContent =
-                formatPrice(deliveryFee);
-        }
-
-        if (totalElement) {
-            totalElement.textContent =
-                formatPrice(total);
-        }
-    }
-
-    function renderCheckoutItems() {
-        const target =
-            $("#checkout-items");
-
-        if (!target) {
-            return;
-        }
-
-        const cart =
-            getCart();
-
-        if (!cart.length) {
-            target.innerHTML = `
-                <div class="checkout-empty">
-                    السلة فارغة.
-                </div>
-            `;
-
-            return;
-        }
-
-        target.innerHTML =
-            cart
-                .map(item => {
-
-                    const product =
-                        products.find(
-                            p =>
-                                String(p.id) ===
-                                String(item.product_id)
-                        );
-
-                    if (!product) {
-                        return "";
-                    }
-
-                    const name =
-                        localized(
-                            product,
-                            "name"
-                        );
-
-                    const image =
-                        productImage(
-                            product
-                        );
-
-                    const quantity =
-                        Number(
-                            item.quantity || 1
-                        );
-
-                    return `
-                        <div class="checkout-item">
-
-                            ${
-                                image
-                                    ? `
-                                        <img
-                                            class="checkout-item-image"
-                                            src="${escapeHTML(image)}"
-                                            alt="${escapeHTML(name)}"
-                                        >
-                                    `
-                                    : ""
-                            }
-
-                            <div class="checkout-item-info">
-
-                                <strong>
-                                    ${escapeHTML(name)}
-                                </strong>
-
-                                <div>
-                                    ${quantity} ×
-                                    ${formatPrice(product.price)}
-                                </div>
-
-                            </div>
-
-                        </div>
-                    `;
-                })
-                .join("");
-    }
-
-    function buildOrderItems() {
-        const cart =
-            getCart();
-
-        if (!cart.length) {
-            return {
-                valid: false,
-                message:
-                    "السلة فارغة.",
-                items: []
-            };
-        }
-
-        const items = [];
-
-        for (const cartItem of cart) {
-            const product =
-                products.find(
-                    p =>
-                        String(p.id) ===
-                        String(
-                            cartItem.product_id
-                        )
-                );
-
-            if (!product) {
-                return {
-                    valid: false,
-                    message:
-                        "أحد المنتجات لم يعد متاحًا.",
-                    items: []
-                };
-            }
-
-            const quantity =
-                Number(
-                    cartItem.quantity || 0
-                );
-
-            if (
-                !Number.isInteger(quantity) ||
-                quantity <= 0
-            ) {
-                return {
-                    valid: false,
-                    message:
-                        "كمية المنتج غير صحيحة.",
-                    items: []
-                };
-            }
-
-            if (
-                quantity >
-                Number(product.stock || 0)
-            ) {
-                return {
-                    valid: false,
-                    message:
-                        `الكمية المطلوبة من "${localized(product, "name")}" غير متوفرة.`,
-                    items: []
-                };
-            }
-
-            /*
-             * مهم:
-             * products.id في قاعدة البيانات الحالية bigint.
-             */
-            items.push({
-                product_id:
-                    Number(product.id),
-                quantity
-            });
-        }
-
-        return {
-            valid: true,
-            items
-        };
-    }
-
-    async function submitOrder(event) {
-        event.preventDefault();
-
-        hideCheckoutMessage();
-
-        const input =
-            getCheckoutInputs();
-
-        if (!input.form) {
-            return;
-        }
-
-        const nameResult =
-            validateName(
-                input.name?.value
-            );
-
-        if (!nameResult.valid) {
-            showCheckoutMessage(
-                nameResult.message
-            );
-
-            input.name?.focus();
-
-            return;
-        }
-
-        const phoneResult =
-            validatePhone(
-                input.phone?.value
-            );
-
-        if (!phoneResult.valid) {
-            showCheckoutMessage(
-                phoneResult.message
-            );
-
-            input.phone?.focus();
-
-            return;
-        }
-
-        const emailResult =
-            validateEmail(
-                input.email?.value
-            );
-
-        if (!emailResult.valid) {
-            showCheckoutMessage(
-                emailResult.message
-            );
-
-            input.email?.focus();
-
-            return;
-        }
-
-        const zone =
-            selectedZone();
-
-        if (!zone) {
-            showCheckoutMessage(
-                "اختر الولاية من فضلك."
-            );
-
-            input.wilaya?.focus();
-
-            return;
-        }
-
-        const deliveryMethod =
-            getDeliveryMethod();
-
-        const address =
-            normalizeText(
-                input.address?.value
-            );
-
-        if (
-            deliveryMethod === "home" &&
-            address.length < 5
-        ) {
-            showCheckoutMessage(
-                "أدخل عنوانًا صحيحًا للتوصيل إلى المنزل."
-            );
-
-            input.address?.focus();
-
-            return;
-        }
-
-        const orderItems =
-            buildOrderItems();
-
-        if (!orderItems.valid) {
-            showCheckoutMessage(
-                orderItems.message
-            );
-
-            return;
-        }
-
-        const notes =
-            normalizeText(
-                input.notes?.value
-            );
-
-        const buttons =
-            $$(
-                "#checkout-form button[type='submit'], #checkoutForm button[type='submit'], [data-submit-order]"
-            );
-
-        buttons.forEach(
-            button => {
-
-                button.disabled =
-                    true;
-
-                button.dataset.originalText =
-                    button.textContent;
-
-                button.textContent =
-                    "جاري إرسال الطلب...";
-
-            }
-        );
-
-        try {
-
-            const {
-                data,
-                error
-            } = await db.rpc(
-                "place_order",
-                {
-                    p_address:
-                        deliveryMethod === "home"
-                            ? address
-                            : "",
-
-                    p_customer_email:
-                        emailResult.value,
-
-                    p_customer_name:
-                        nameResult.value,
-
-                    p_customer_phone:
-                        phoneResult.value,
-
-                    p_delivery_method:
-                        deliveryMethod,
-
-                    p_items:
-                        orderItems.items,
-
-                    p_notes:
-                        notes,
-
-                    p_wilaya_code:
-                        String(
-                            zone.wilaya_code ||
-                            zone.code ||
-                            zone.wilaya
-                        )
-                }
-            );
-
-            if (error) {
-                console.error(
-                    "place_order error:",
-                    error
-                );
-
-                showCheckoutMessage(
-                    error.message ||
-                    "تعذر إنشاء الطلب."
-                );
-
-                return;
-            }
-
-            const orderResult =
-                Array.isArray(data)
-                    ? data[0]
-                    : data;
-
-            if (
-                !orderResult ||
-                orderResult.success !== true
-            ) {
-                console.error(
-                    "Invalid order response:",
-                    data
-                );
-
-                showCheckoutMessage(
-                    "لم يتم إنشاء الطلب."
-                );
-
-                return;
-            }
-
-            localStorage.setItem(
-                LAST_ORDER_KEY,
-                JSON.stringify(
-                    orderResult
-                )
-            );
-
-            clearCart();
-
-            window.location.href =
-                "order-success.html";
-
-        } catch (error) {
-
-            console.error(
-                "Checkout exception:",
-                error
-            );
-
-            showCheckoutMessage(
-                error.message ||
-                "حدث خطأ غير متوقع."
-            );
-
-        } finally {
-
-            buttons.forEach(
-                button => {
-
-                    button.disabled =
-                        false;
-
-                    button.textContent =
-                        button.dataset.originalText ||
-                        "تأكيد الطلب";
-
-                }
-            );
-        }
-    }
-
-    /* =====================================================
-       EVENTS
-    ===================================================== */
-
-    function setupEvents() {
-
-        document.addEventListener(
-            "click",
-            event => {
-
-                const add =
-                    event.target.closest(
-                        "[data-add-to-cart]"
-                    );
-
-                if (add) {
-                    event.preventDefault();
-
-                    addToCart(
-                        add.dataset.addToCart
-                    );
-
-                    return;
-                }
-
-                const productAdd =
-                    event.target.closest(
-                        "[data-product-add]"
-                    );
-
-                if (productAdd) {
-                    event.preventDefault();
-
-                    const quantity =
-                        Number(
-                            $(
-                                "#product-quantity"
-                            )?.value || 1
-                        );
-
-                    addToCart(
-                        productAdd.dataset.productAdd,
-                        quantity
-                    );
-
-                    return;
-                }
-
-                const remove =
-                    event.target.closest(
-                        "[data-cart-remove]"
-                    );
-
-                if (remove) {
-                    event.preventDefault();
-
-                    removeCartItem(
-                        remove.dataset.cartRemove
-                    );
-
-                    return;
-                }
-
-                const minus =
-                    event.target.closest(
-                        "[data-cart-minus]"
-                    );
-
-                if (minus) {
-                    event.preventDefault();
-
-                    const item =
-                        getCart().find(
-                            entry =>
-                                String(
-                                    entry.product_id
-                                ) ===
-                                String(
-                                    minus.dataset.cartMinus
-                                )
-                        );
-
-                    if (item) {
-                        updateCartItem(
-                            item.product_id,
-                            Number(
-                                item.quantity
-                            ) - 1
-                        );
-                    }
-
-                    return;
-                }
-
-                const plus =
-                    event.target.closest(
-                        "[data-cart-plus]"
-                    );
-
-                if (plus) {
-                    event.preventDefault();
-
-                    const item =
-                        getCart().find(
-                            entry =>
-                                String(
-                                    entry.product_id
-                                ) ===
-                                String(
-                                    plus.dataset.cartPlus
-                                )
-                        );
-
-                    if (item) {
-                        updateCartItem(
-                            item.product_id,
-                            Number(
-                                item.quantity
-                            ) + 1
-                        );
-                    }
-
-                    return;
-                }
-            }
-        );
-
-        document.addEventListener(
-            "change",
-            event => {
-
-                const quantity =
-                    event.target.closest(
-                        "[data-cart-quantity]"
-                    );
-
-                if (quantity) {
-                    updateCartItem(
-                        quantity.dataset.cartQuantity,
-                        Number(
-                            quantity.value
-                        )
-                    );
-
-                    return;
-                }
-
-                if (
-                    event.target.matches(
-                        "#wilaya, #delivery-method, #deliveryMethod"
-                    )
-                ) {
-                    updateCheckoutTotal();
-
-                    if (
-                        event.target.id ===
-                            "delivery-method" ||
-                        event.target.id ===
-                            "deliveryMethod"
-                    ) {
-                        toggleAddress();
-                    }
-                }
-            }
-        );
-
-        const checkout =
-            $(
-                "#checkout-form, #checkoutForm, #order-form"
-            );
-
-        if (checkout) {
-            checkout.addEventListener(
-                "submit",
-                submitOrder
-            );
-        }
-    }
-
-    function toggleAddress() {
-        const method =
-            getDeliveryMethod();
-
-        const group =
-            $("#address-group");
-
-        const address =
-            $("#address");
-
-        if (!group) {
-            return;
-        }
-
-        if (method === "home") {
-
-            group.style.display =
-                "block";
-
-            if (address) {
-                address.required =
-                    true;
-            }
-
-        } else {
-
-            group.style.display =
-                "none";
-
-            if (address) {
-                address.required =
-                    false;
-
-                address.value = "";
-            }
-        }
-    }
-
-    /* =====================================================
-       REALTIME
-    ===================================================== */
-
-    function setupRealtime() {
-        if (!db) {
-            return;
-        }
-
-        db
-            .channel(
-                "atelier-noura-store"
-            )
-
-            .on(
-                "postgres_changes",
-                {
-                    event: "*",
-                    schema: "public",
-                    table: "products"
-                },
-                async () => {
-
-                    try {
-
-                        await loadProducts();
-
-                        renderProducts();
-                        renderFeatured();
-                        renderNewArrivals();
-                        renderCart();
-                        renderCheckoutItems();
-                        updateCheckoutTotal();
-                        renderProductDetails();
-
-                    } catch (error) {
-
-                        console.error(
-                            "Realtime products error:",
-                            error
-                        );
-                    }
-                }
-            )
-
-            .on(
-                "postgres_changes",
-                {
-                    event: "*",
-                    schema: "public",
-                    table: "product_images"
-                },
-                async () => {
-
-                    try {
-
-                        await loadProducts();
-
-                        renderProducts();
-                        renderFeatured();
-                        renderNewArrivals();
-                        renderCart();
-                        renderCheckoutItems();
-                        renderProductDetails();
-
-                    } catch (error) {
-
-                        console.error(
-                            "Realtime images error:",
-                            error
-                        );
-                    }
-                }
-            )
-
-            .subscribe(
-                status => {
-                    console.log(
-                        "Atelier Noura Realtime:",
-                        status
-                    );
-                }
-            );
-    }
-
-    /* =====================================================
-       INITIALIZATION
-    ===================================================== */
-
-    async function initialize() {
-
-        try {
-
-            /*
-             * مهم جدًا:
-             * ننتظر Supabase حتى يصبح client حقيقيًا.
-             */
-            await initializeDatabase();
-
-            /*
-             * تحميل كل البيانات.
-             */
-            await loadProducts();
-
-            await loadCategories();
-
-            await loadDeliveryZones();
-
-            /*
-             * تحديث السلة.
-             */
-            updateCartCount();
-
-            /*
-             * الصفحة الرئيسية.
-             */
-            renderProducts();
-
-            renderFeatured();
-
-            renderNewArrivals();
-
-            /*
-             * السلة.
-             */
-            renderCart();
-
-            /*
-             * صفحة المنتج.
-             */
-            await renderProductDetails();
-
-            /*
-             * Checkout.
-             */
-            if ($("#wilaya")) {
-
-                renderWilayas();
-
-                renderCheckoutItems();
-
-                updateCheckoutTotal();
-
-                toggleAddress();
-            }
-
-            /*
-             * الأحداث.
-             */
-            setupEvents();
-
-            /*
-             * Realtime.
-             */
-            setupRealtime();
-
-            console.log(
-                `Atelier Noura loaded successfully: ${products.length} products`
-            );
-
-        } catch (error) {
-
-            console.error(
-                "Atelier Noura initialization error:",
-                error
-            );
-
-            /*
-             * إظهار الخطأ فقط في الأماكن المناسبة.
-             */
-            const detail =
-                $("#productDetail");
-
-            if (detail) {
-                detail.innerHTML = `
-                    <div class="empty-state">
-                        حدث خطأ في الاتصال بقاعدة البيانات.
-                        <br>
-                        <small>
-                            ${escapeHTML(
-                                error.message
-                            )}
-                        </small>
-                    </div>
-                `;
-            }
-
-            const productGrid =
-                $(
-                    "[data-products], #products-grid, #productsGrid, .products-grid"
-                );
-
-            if (productGrid) {
-                productGrid.innerHTML = `
-                    <div class="empty-state">
-                        تعذر تحميل المنتجات حاليًا.
-                        <br>
-                        <small>
-                            ${escapeHTML(
-                                error.message
-                            )}
-                        </small>
-                    </div>
-                `;
-            }
-        }
-    }
-
-    /* =====================================================
-       START
-    ===================================================== */
-
-    document.addEventListener(
-        "DOMContentLoaded",
-        initialize
+    return JSON.parse(
+      localStorage.getItem(
+        "cart"
+      ) || "[]"
     );
 
-})();
+  } catch {
+
+    return [];
+  }
+}
+
+
+function saveCart(cart) {
+
+  localStorage.setItem(
+    "cart",
+    JSON.stringify(cart)
+  );
+
+  updateCartCount();
+}
+
+
+function getAccount() {
+
+  try {
+
+    return JSON.parse(
+      localStorage.getItem(
+        "atelierAccount"
+      ) || "null"
+    );
+
+  } catch {
+
+    return null;
+  }
+}
+
+
+function updateCartCount() {
+
+  const count =
+    getCart()
+      .reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item.qty || 0
+          ),
+        0
+      );
+
+
+  document
+    .querySelectorAll(
+      "#cartCount"
+    )
+    .forEach(
+      element => {
+
+        element.textContent =
+          count;
+      }
+    );
+}
+
+
+/* ============================================================
+   LOAD SUPABASE
+============================================================ */
+
+function loadScript(src) {
+
+  return new Promise(
+    (resolve, reject) => {
+
+      const existing =
+        document.querySelector(
+          `script[src="${src}"]`
+        );
+
+
+      if (existing) {
+
+        if (
+          existing.dataset.loaded ===
+          "true"
+        ) {
+
+          resolve();
+
+        } else {
+
+          existing.addEventListener(
+            "load",
+            resolve,
+            {
+              once: true
+            }
+          );
+
+          existing.addEventListener(
+            "error",
+            reject,
+            {
+              once: true
+            }
+          );
+        }
+
+        return;
+      }
+
+
+      const script =
+        document.createElement(
+          "script"
+        );
+
+      script.src = src;
+
+      script.onload = () => {
+
+        script.dataset.loaded =
+          "true";
+
+        resolve();
+      };
+
+      script.onerror =
+        () =>
+          reject(
+            new Error(
+              "تعذر تحميل Supabase."
+            )
+          );
+
+      document.head.appendChild(
+        script
+      );
+    }
+  );
+}
+
+
+async function initStoreSupabase() {
+
+  if (
+    typeof isSupabaseConfigured !==
+    "function"
+  ) {
+
+    await loadScript(
+      "js/supabase.js"
+    );
+  }
+
+
+  if (!window.supabase) {
+
+    await loadScript(
+      SUPABASE_CDN
+    );
+  }
+
+
+  STORE_DB =
+    await initSupabase();
+
+
+  if (!STORE_DB) {
+
+    throw new Error(
+      "Supabase غير مضبوط."
+    );
+  }
+
+
+  return STORE_DB;
+}
+
+
+/* ============================================================
+   PRODUCTS
+============================================================ */
+
+async function loadProducts() {
+
+  const {
+    data,
+    error
+  } = await STORE_DB
+    .from("products")
+    .select(
+      "*,categories(*),product_images(*)"
+    )
+    .eq(
+      "is_active",
+      true
+    )
+    .order(
+      "created_at",
+      {
+        ascending: false
+      }
+    );
+
+
+  if (error)
+    throw error;
+
+
+  PRODUCTS =
+    data || [];
+
+
+  cleanCart();
+
+
+  return PRODUCTS;
+}
+
+
+function cleanCart() {
+
+  const cart =
+    getCart();
+
+
+  const validIds =
+    new Set(
+      PRODUCTS.map(
+        product =>
+          String(product.id)
+      )
+    );
+
+
+  const cleaned =
+    cart.filter(
+      item =>
+        validIds.has(
+          String(
+            item.id ??
+            item.product_id
+          )
+        )
+    );
+
+
+  if (
+    cleaned.length !==
+    cart.length
+  ) {
+
+    saveCart(
+      cleaned
+    );
+  }
+}
+
+
+function productName(product) {
+
+  const lang =
+    getLang();
+
+
+  if (lang === "fr")
+    return (
+      product.name_fr ||
+      product.name_en ||
+      product.name_ar ||
+      "Product"
+    );
+
+
+  if (lang === "en")
+    return (
+      product.name_en ||
+      product.name_fr ||
+      product.name_ar ||
+      "Product"
+    );
+
+
+  return (
+    product.name_ar ||
+    product.name_en ||
+    product.name_fr ||
+    "Product"
+  );
+}
+
+
+function productDescription(
+  product
+) {
+
+  const lang =
+    getLang();
+
+
+  if (lang === "fr")
+    return (
+      product.description_fr ||
+      product.description_en ||
+      product.description_ar ||
+      ""
+    );
+
+
+  if (lang === "en")
+    return (
+      product.description_en ||
+      product.description_fr ||
+      product.description_ar ||
+      ""
+    );
+
+
+  return (
+    product.description_ar ||
+    product.description_en ||
+    product.description_fr ||
+    ""
+  );
+}
+
+
+function productCategory(
+  product
+) {
+
+  return (
+    product.categories?.slug ||
+    ""
+  );
+}
+
+
+function getMedia(
+  product
+) {
+
+  return (
+    product.product_images
+      ?.slice()
+      .sort(
+        (a, b) =>
+          Number(
+            a.sort_order || 0
+          ) -
+          Number(
+            b.sort_order || 0
+          )
+      ) || []
+  );
+}
+
+
+function getCoverMedia(
+  product
+) {
+
+  const media =
+    getMedia(product);
+
+
+  return (
+    media.find(
+      item =>
+        item.is_cover
+    )
+    ||
+    media.find(
+      item =>
+        item.media_type ===
+        "image"
+    )
+    ||
+    media[0]
+    ||
+    null
+  );
+}
+
+
+function mediaUrl(
+  storagePath
+) {
+
+  if (!storagePath)
+    return "";
+
+
+  return STORE_DB
+    .storage
+    .from(
+      "product-media"
+    )
+    .getPublicUrl(
+      storagePath
+    )
+    .data
+    .publicUrl;
+}
+
+
+/* ============================================================
+   MEDIA
+============================================================ */
+
+function productVisual(
+  product,
+  extraClass = ""
+) {
+
+  const media =
+    getCoverMedia(
+      product
+    );
+
+
+  if (!media) {
+
+    return `
+      <div
+        class="
+          product-image
+          ${extraClass}
+          product-placeholder
+        "
+      >
+
+        <span class="product-number">
+          AN
+        </span>
+
+        <div>
+
+          <small>
+            ATELIER NOURA
+          </small>
+
+          <strong>
+            ${escapeHtml(
+              productName(product)
+            )}
+          </strong>
+
+        </div>
+
+      </div>
+    `;
+  }
+
+
+  const url =
+    mediaUrl(
+      media.storage_path
+    );
+
+
+  if (
+    media.media_type ===
+    "video"
+  ) {
+
+    return `
+      <div
+        class="
+          product-image
+          ${extraClass}
+        "
+      >
+
+        <video
+          src="${escapeHtml(url)}"
+          muted
+          loop
+          autoplay
+          playsinline
+          preload="metadata"
+          style="
+            width:100%;
+            height:100%;
+            object-fit:cover;
+          "
+        ></video>
+
+      </div>
+    `;
+  }
+
+
+  return `
+    <div
+      class="
+        product-image
+        ${extraClass}
+      "
+    >
+
+      <img
+        src="${escapeHtml(url)}"
+        alt="${escapeHtml(
+          productName(product)
+        )}"
+        loading="lazy"
+      >
+
+    </div>
+  `;
+}
+
+
+/* ============================================================
+   PRODUCT CARD
+============================================================ */
+
+function productCard(
+  product
+) {
+
+  return `
+
+    <article
+      class="product-card"
+    >
+
+      <a
+        href="
+          product.html?id=${
+            encodeURIComponent(
+              product.id
+            )
+          }
+        "
+      >
+
+        ${productVisual(
+          product
+        )}
+
+      </a>
+
+
+      <button
+        class="add"
+        data-add="${escapeHtml(
+          product.id
+        )}"
+        type="button"
+      >
+        +
+      </button>
+
+
+      <div class="product-info">
+
+        <h3>
+          ${escapeHtml(
+            productName(product)
+          )}
+        </h3>
+
+        <p>
+          ${escapeHtml(
+            productDescription(
+              product
+            )
+          )}
+        </p>
+
+        <div class="price">
+          ${money(
+            product.price
+          )}
+        </div>
+
+      </div>
+
+    </article>
+  `;
+}
+
+
+function renderProducts(
+  list = PRODUCTS,
+  target = "productsGrid"
+) {
+
+  const element =
+    document.getElementById(
+      target
+    );
+
+
+  if (!element)
+    return;
+
+
+  if (!list.length) {
+
+    element.innerHTML = `
+      <div
+        class="empty"
+        style="
+          grid-column:1/-1;
+        "
+      >
+        لا توجد منتجات متاحة حاليًا.
+      </div>
+    `;
+
+    return;
+  }
+
+
+  element.innerHTML =
+    list
+      .map(
+        productCard
+      )
+      .join("");
+
+
+  element
+    .querySelectorAll(
+      "[data-add]"
+    )
+    .forEach(
+      button => {
+
+        button.addEventListener(
+          "click",
+          () => {
+
+            addToCart(
+              button.dataset.add
+            );
+          }
+        );
+      }
+    );
+}
+
+
+/* ============================================================
+   HOME
+============================================================ */
+
+function renderNewArrivals() {
+
+  const grid =
+    document.getElementById(
+      "newArrivalsGrid"
+    );
+
+
+  if (!grid)
+    return;
+
+
+  const items =
+    PRODUCTS.slice(0, 3);
+
+
+  if (!items.length) {
+
+    grid.innerHTML = "";
+
+    return;
+  }
+
+
+  grid.innerHTML =
+    items
+      .map(
+        (product, index) => `
+
+          <a
+            class="
+              floating-product
+              fp-${index + 1}
+            "
+            href="
+              product.html?id=${
+                encodeURIComponent(
+                  product.id
+                )
+              }
+            "
+          >
+
+            <div
+              class="
+                floating-product-image
+              "
+            >
+
+              ${productVisual(
+                product
+              )}
+
+            </div>
+
+
+            <div
+              class="
+                floating-product-meta
+              "
+            >
+
+              <span>
+                ${
+                  index === 0
+                    ? "NEW ARRIVAL"
+                    : index === 1
+                      ? "JUST IN"
+                      : "HANDMADE"
+                }
+              </span>
+
+              <strong>
+                ${escapeHtml(
+                  productName(
+                    product
+                  )
+                )}
+              </strong>
+
+              <small>
+                ${money(
+                  product.price
+                )}
+              </small>
+
+            </div>
+
+          </a>
+        `
+      )
+      .join("");
+}
+
+
+function initHome() {
+
+  renderNewArrivals();
+
+
+  const featured =
+    PRODUCTS
+      .filter(
+        p =>
+          p.is_featured
+      )
+      .slice(0, 4);
+
+
+  renderProducts(
+    featured.length
+      ? featured
+      : PRODUCTS.slice(0, 4),
+    "featuredGrid"
+  );
+}
+
+
+/* ============================================================
+   PRODUCTS PAGE
+============================================================ */
+
+function initProductsPage() {
+
+  const grid =
+    document.getElementById(
+      "productsGrid"
+    );
+
+
+  if (!grid)
+    return;
+
+
+  let current =
+    new URLSearchParams(
+      location.search
+    ).get(
+      "category"
+    ) || "all";
+
+
+  function refresh() {
+
+    let list =
+      current === "all"
+        ? [...PRODUCTS]
+        : PRODUCTS.filter(
+            product =>
+              productCategory(
+                product
+              ) === current
+          );
+
+
+    const sort =
+      document.getElementById(
+        "sort"
+      )?.value;
+
+
+    if (sort === "low") {
+
+      list.sort(
+        (a, b) =>
+          Number(a.price) -
+          Number(b.price)
+      );
+    }
+
+
+    if (sort === "high") {
+
+      list.sort(
+        (a, b) =>
+          Number(b.price) -
+          Number(a.price)
+      );
+    }
+
+
+    renderProducts(
+      list,
+      "productsGrid"
+    );
+  }
+
+
+  document
+    .querySelectorAll(
+      ".filter"
+    )
+    .forEach(
+      button => {
+
+        button.addEventListener(
+          "click",
+          () => {
+
+            current =
+              button.dataset.cat;
+
+
+            document
+              .querySelectorAll(
+                ".filter"
+              )
+              .forEach(
+                x =>
+                  x.classList
+                    .remove(
+                      "active"
+                    )
+              );
+
+
+            button.classList
+              .add(
+                "active"
+              );
+
+
+            refresh();
+          }
+        );
+      }
+    );
+
+
+  document
+    .getElementById(
+      "sort"
+    )
+    ?.addEventListener(
+      "change",
+      refresh
+    );
+
+
+  const active =
+    document.querySelector(
+      `[data-cat="${current}"]`
+    );
+
+
+  active
+    ?.classList
+    .add("active");
+
+
+  refresh();
+}
+
+
+/* ============================================================
+   PRODUCT DETAIL
+============================================================ */
+
+function renderProductDetail(
+  product
+) {
+
+  const root =
+    document.getElementById(
+      "productDetail"
+    );
+
+
+  if (!root)
+    return;
+
+
+  if (!product) {
+
+    root.innerHTML = `
+      <div class="empty">
+        المنتج غير موجود.
+      </div>
+    `;
+
+    return;
+  }
+
+
+  const media =
+    getMedia(
+      product
+    );
+
+
+  const gallery =
+    media.length
+      ? media
+          .map(
+            item => {
+
+              const url =
+                mediaUrl(
+                  item.storage_path
+                );
+
+
+              if (
+                item.media_type ===
+                "video"
+              ) {
+
+                return `
+                  <div
+                    class="detail-image"
+                    style="
+                      overflow:hidden;
+                    "
+                  >
+
+                    <video
+                      src="${escapeHtml(url)}"
+                      controls
+                      playsinline
+                      preload="metadata"
+                      style="
+                        width:100%;
+                        height:100%;
+                        object-fit:cover;
+                      "
+                    ></video>
+
+                  </div>
+                `;
+              }
+
+
+              return `
+                <div
+                  class="
+                    detail-image
+                    has-image
+                  "
+                >
+
+                  <img
+                    src="${escapeHtml(url)}"
+                    alt="${escapeHtml(
+                      productName(
+                        product
+                      )
+                    )}"
+                  >
+
+                </div>
+              `;
+            }
+          )
+          .join("")
+      : `
+          <div
+            class="
+              detail-image
+              product-placeholder
+            "
+          >
+
+            <div>
+
+              <small>
+                ATELIER NOURA
+              </small>
+
+              <strong>
+                ${escapeHtml(
+                  productName(
+                    product
+                  )
+                )}
+              </strong>
+
+            </div>
+
+          </div>
+        `;
+
+
+  const category =
+    product.categories?.name_ar ||
+    productCategory(
+      product
+    );
+
+
+  root.innerHTML = `
+
+    <div
+      class="
+        product-detail
+      "
+    >
+
+      <div>
+
+        <div
+          style="
+            display:grid;
+            gap:16px;
+          "
+        >
+
+          ${gallery}
+
+        </div>
+
+      </div>
+
+
+      <div
+        class="detail-info"
+      >
+
+        <p class="eyebrow">
+          ${escapeHtml(
+            category || ""
+          )}
+        </p>
+
+
+        <h1>
+          ${escapeHtml(
+            productName(
+              product
+            )
+          )}
+        </h1>
+
+
+        <div class="price">
+          ${money(
+            product.price
+          )}
+        </div>
+
+
+        <p class="description">
+
+          ${escapeHtml(
+            productDescription(
+              product
+            )
+          )}
+
+          <br>
+          <br>
+
+          قطعة مصنوعة بعناية،
+          وقد تختلف التفاصيل قليلًا
+          لأن كل قطعة لها طابعها الخاص.
+
+        </p>
+
+
+        <div class="qty">
+
+          <button
+            type="button"
+            id="minus"
+          >
+            −
+          </button>
+
+          <b id="qty">
+            1
+          </b>
+
+          <button
+            type="button"
+            id="plus"
+          >
+            +
+          </button>
+
+        </div>
+
+
+        <button
+          class="btn btn-dark"
+          id="buy"
+          type="button"
+        >
+          أضيفي إلى الحقيبة
+        </button>
+
+      </div>
+
+    </div>
+  `;
+
+
+  let quantity = 1;
+
+
+  const quantityElement =
+    document.getElementById(
+      "qty"
+    );
+
+
+  document
+    .getElementById(
+      "plus"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+
+        quantity++;
+
+        quantityElement
+          .textContent =
+            quantity;
+      }
+    );
+
+
+  document
+    .getElementById(
+      "minus"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+
+        quantity =
+          Math.max(
+            1,
+            quantity - 1
+          );
+
+        quantityElement
+          .textContent =
+            quantity;
+      }
+    );
+
+
+  document
+    .getElementById(
+      "buy"
+    )
+    ?.addEventListener(
+      "click",
+      () => {
+
+        addToCart(
+          product.id,
+          quantity
+        );
+
+        location.href =
+          "cart.html";
+      }
+    );
+}
+
+
+function initDetail() {
+
+  const root =
+    document.getElementById(
+      "productDetail"
+    );
+
+
+  if (!root)
+    return;
+
+
+  const id =
+    new URLSearchParams(
+      location.search
+    ).get(
+      "id"
+    );
+
+
+  const product =
+    PRODUCTS.find(
+      p =>
+        String(p.id) ===
+        String(id)
+    );
+
+
+  renderProductDetail(
+    product
+  );
+}
+
+
+/* ============================================================
+   CART
+============================================================ */
+
+function addToCart(
+  productId,
+  quantity = 1
+) {
+
+  const product =
+    PRODUCTS.find(
+      p =>
+        String(p.id) ===
+        String(productId)
+    );
+
+
+  if (!product)
+    return;
+
+
+  let cart =
+    getCart();
+
+
+  const existing =
+    cart.find(
+      item =>
+        String(
+          item.id ??
+          item.product_id
+        ) ===
+        String(productId)
+    );
+
+
+  if (existing) {
+
+    existing.id =
+      product.id;
+
+    existing.qty =
+      Number(
+        existing.qty || 0
+      ) +
+      Number(quantity);
+
+  } else {
+
+    cart.push({
+      id: product.id,
+      qty: Number(quantity)
+    });
+  }
+
+
+  saveCart(cart);
+
+
+  const button =
+    document.querySelector(
+      `[data-add="${CSS.escape(
+        String(productId)
+      )}"]`
+    );
+
+
+  if (button) {
+
+    const original =
+      button.textContent;
+
+    button.textContent =
+      "✓";
+
+
+    setTimeout(
+      () => {
+
+        button.textContent =
+          original;
+
+      },
+      900
+    );
+  }
+}
+
+
+function initCart() {
+
+  const root =
+    document.getElementById(
+      "cartView"
+    );
+
+
+  if (!root)
+    return;
+
+
+  const cart =
+    getCart();
+
+
+  if (!cart.length) {
+
+    root.innerHTML = `
+      <div class="empty">
+
+        <h2>
+          حقيبتك فارغة
+        </h2>
+
+        <p>
+          اكتشفي قطع
+          Atelier Noura.
+        </p>
+
+        <a
+          class="btn btn-dark"
+          href="products.html"
+        >
+          المتجر
+        </a>
+
+      </div>
+    `;
+
+    return;
+  }
+
+
+  let subtotal = 0;
+
+
+  const rows =
+    cart
+      .map(
+        item => {
+
+          const product =
+            PRODUCTS.find(
+              p =>
+                String(p.id) ===
+                String(
+                  item.id ??
+                  item.product_id
+                )
+            );
+
+
+          if (!product)
+            return "";
+
+
+          const quantity =
+            Number(
+              item.qty ??
+              item.quantity ??
+              1
+            );
+
+
+          const line =
+            Number(
+              product.price
+            ) *
+            quantity;
+
+
+          subtotal +=
+            line;
+
+
+          return `
+
+            <div
+              class="cart-item"
+            >
+
+              <div
+                class="cart-thumb"
+              >
+
+                ${productVisual(
+                  product
+                )}
+
+              </div>
+
+
+              <div>
+
+                <h3>
+                  ${escapeHtml(
+                    productName(
+                      product
+                    )
+                  )}
+                </h3>
+
+                <p>
+                  ${quantity}
+                  ×
+                  ${money(
+                    product.price
+                  )}
+                </p>
+
+              </div>
+
+
+              <div>
+
+                <b>
+                  ${money(line)}
+                </b>
+
+                <br>
+
+                <button
+                  class="remove"
+                  data-remove-cart="${escapeHtml(
+                    product.id
+                  )}"
+                  type="button"
+                >
+                  حذف
+                </button>
+
+              </div>
+
+            </div>
+          `;
+        }
+      )
+      .join("");
+
+
+  root.innerHTML = `
+
+    <div
+      class="cart-layout"
+    >
+
+      <div>
+        ${rows}
+      </div>
+
+
+      <aside
+        class="summary-card"
+      >
+
+        <h2>
+          ملخص الطلب
+        </h2>
+
+
+        <div
+          class="summary-row"
+        >
+
+          <span>
+            المنتجات
+          </span>
+
+          <b>
+            ${money(
+              subtotal
+            )}
+          </b>
+
+        </div>
+
+
+        <div
+          class="summary-row"
+        >
+
+          <span>
+            التوصيل
+          </span>
+
+          <span>
+            يحسب حسب الولاية
+          </span>
+
+        </div>
+
+
+        <div
+          class="
+            summary-row
+            summary-total
+          "
+        >
+
+          <span>
+            الإجمالي
+          </span>
+
+          <b>
+            ${money(
+              subtotal
+            )}
+          </b>
+
+        </div>
+
+
+        <a
+          class="btn btn-dark full"
+          href="checkout.html"
+        >
+          متابعة الطلب
+        </a>
+
+      </aside>
+
+    </div>
+  `;
+
+
+  root
+    .querySelectorAll(
+      "[data-remove-cart]"
+    )
+    .forEach(
+      button => {
+
+        button.addEventListener(
+          "click",
+          () => {
+
+            const id =
+              button.dataset
+                .removeCart;
+
+
+            saveCart(
+              getCart().filter(
+                item =>
+                  String(
+                    item.id ??
+                    item.product_id
+                  ) !==
+                  String(id)
+              )
+            );
+
+
+            initCart();
+          }
+        );
+      }
+    );
+}
+
+
+/* ============================================================
+   DELIVERY
+============================================================ */
+
+async function loadDeliveryZones() {
+
+  const {
+    data,
+    error
+  } = await STORE_DB
+    .from(
+      "delivery_zones"
+    )
+    .select("*")
+    .eq(
+      "is_active",
+      true
+    )
+    .order(
+      "wilaya_code",
+      {
+        ascending: true
+      }
+    );
+
+
+  if (error)
+    throw error;
+
+
+  DELIVERY_ZONES =
+    data || [];
+
+
+  return DELIVERY_ZONES;
+}
+
+
+function findField(
+  form,
+  names
+) {
+
+  for (
+    const name
+    of names
+  ) {
+
+    const byId =
+      form.querySelector(
+        `#${name}`
+      );
+
+
+    if (byId)
+      return byId;
+
+
+    const byName =
+      form.querySelector(
+        `[name="${name}"]`
+      );
+
+
+    if (byName)
+      return byName;
+  }
+
+
+  return null;
+}
+
+
+function getDeliveryMethod(
+  form
+) {
+
+  const checked =
+    form.querySelector(
+      'input[name="delivery_method"]:checked'
+    );
+
+
+  if (checked)
+    return checked.value;
+
+
+  const select =
+    findField(
+      form,
+      [
+        "delivery_method",
+        "deliveryMethod",
+        "delivery"
+      ]
+    );
+
+
+  return (
+    select?.value ||
+    "home"
+  );
+}
+
+
+function getWilayaCode(
+  form
+) {
+
+  const select =
+    findField(
+      form,
+      [
+        "wilaya",
+        "wilaya_code"
+      ]
+    );
+
+
+  return (
+    select?.value ||
+    ""
+  );
+}
+
+
+function populateWilayas(
+  form
+) {
+
+  const select =
+    findField(
+      form,
+      [
+        "wilaya",
+        "wilaya_code"
+      ]
+    );
+
+
+  if (!select)
+    return;
+
+
+  select.innerHTML = `
+
+    <option value="">
+      اختر الولاية
+    </option>
+
+    ${
+      DELIVERY_ZONES
+        .map(
+          zone => {
+
+            const name =
+              zone.wilaya_name_ar ||
+              zone.wilaya ||
+              zone.wilaya_name_fr ||
+              zone.wilaya_name_en ||
+              zone.wilaya_code ||
+              "";
+
+            return `
+
+              <option
+                value="${escapeHtml(
+                  zone.wilaya_code
+                )}"
+              >
+                ${escapeHtml(
+                  name
+                )}
+              </option>
+
+            `;
+          }
+        )
+        .join("")
+    }
+
+  `;
+}
+
+
+function renderCheckoutSummary(
+  cart,
+  deliveryFee = 0
+) {
+
+  const root =
+    document.getElementById(
+      "checkoutSummary"
+    );
+
+
+  if (!root)
+    return;
+
+
+  let subtotal = 0;
+
+
+  const rows =
+    cart
+      .map(
+        item => {
+
+          const product =
+            PRODUCTS.find(
+              p =>
+                String(p.id) ===
+                String(
+                  item.id ??
+                  item.product_id
+                )
+            );
+
+
+          if (!product)
+            return "";
+
+
+          const quantity =
+            Number(
+              item.qty ??
+              item.quantity ??
+              1
+            );
+
+
+          const line =
+            Number(
+              product.price
+            ) *
+            quantity;
+
+
+          subtotal +=
+            line;
+
+
+          return `
+
+            <div
+              class="summary-row"
+            >
+
+              <span>
+
+                ${escapeHtml(
+                  productName(
+                    product
+                  )
+                )}
+
+                ×
+
+                ${quantity}
+
+              </span>
+
+              <b>
+                ${money(line)}
+              </b>
+
+            </div>
+
+          `;
+        }
+      )
+      .join("");
+
+
+  const total =
+    subtotal +
+    Number(
+      deliveryFee || 0
+    );
+
+
+  root.innerHTML = `
+
+    <h2>
+      طلبك
+    </h2>
+
+    ${rows}
+
+
+    <div
+      class="summary-row"
+    >
+
+      <span>
+        المنتجات
+      </span>
+
+      <b>
+        ${money(
+          subtotal
+        )}
+      </b>
+
+    </div>
+
+
+    <div
+      class="summary-row"
+    >
+
+      <span>
+        التوصيل
+      </span>
+
+      <b>
+        ${money(
+          deliveryFee
+        )}
+      </b>
+
+    </div>
+
+
+    <div
+      class="
+        summary-row
+        summary-total
+      "
+    >
+
+      <span>
+        الإجمالي
+      </span>
+
+      <b>
+        ${money(total)}
+      </b>
+
+    </div>
+
+  `;
+}
+
+
+/* ============================================================
+   CHECKOUT
+   FIXED
+============================================================ */
+
+async function initCheckout() {
+
+  const form =
+    document.querySelector(
+      "#checkoutForm, #checkout-form, #order-form, form[data-checkout]"
+    );
+
+
+  if (!form)
+    return;
+
+
+  const cart =
+    getCart();
+
+
+  if (!cart.length) {
+
+    const summary =
+      document.getElementById(
+        "checkoutSummary"
+      );
+
+
+    if (summary) {
+
+      summary.innerHTML = `
+        <div class="empty">
+          السلة فارغة.
+        </div>
+      `;
+    }
+
+
+    return;
+  }
+
+
+  await loadDeliveryZones();
+
+
+  populateWilayas(
+    form
+  );
+
+
+  renderCheckoutSummary(
+    cart,
+    0
+  );
+
+
+  function updateFee() {
+
+    const method =
+      getDeliveryMethod(
+        form
+      );
+
+
+    const code =
+      getWilayaCode(
+        form
+      );
+
+
+    const zone =
+      DELIVERY_ZONES.find(
+        zone =>
+          String(
+            zone.wilaya_code
+          ) ===
+          String(code)
+      );
+
+
+    let fee = 0;
+
+
+    if (zone) {
+
+      fee =
+        method === "office"
+          ? Number(
+              zone.office_fee || 0
+            )
+          : Number(
+              zone.home_fee || 0
+            );
+    }
+
+
+    renderCheckoutSummary(
+      cart,
+      fee
+    );
+
+
+    toggleAddress(
+      form
+    );
+  }
+
+
+  form
+    .querySelectorAll(
+      "select,input,textarea"
+    )
+    .forEach(
+      input => {
+
+        input.addEventListener(
+          "change",
+          updateFee
+        );
+
+        input.addEventListener(
+          "input",
+          event => {
+
+            if (
+              event.target.matches(
+                "#delivery-method, #deliveryMethod, #wilaya, #customer-wilaya, [name='delivery_method'], [name='deliveryMethod'], [name='wilaya'], [name='wilaya_code']"
+              )
+            ) {
+
+              updateFee();
+            }
+          }
+        );
+      }
+    );
+
+
+  toggleAddress(
+    form
+  );
+
+
+  form.onsubmit =
+    async event => {
+
+      event.preventDefault();
+
+
+      if (!cart.length) {
+
+        alert(
+          "السلة فارغة."
+        );
+
+        return;
+      }
+
+
+      /* =====================================================
+         CUSTOMER NAME
+      ===================================================== */
+
+      const customerName =
+        (
+          findField(
+            form,
+            [
+              "name",
+              "customerName",
+              "customer_name"
+            ]
+          )?.value || ""
+        ).trim();
+
+
+      /* =====================================================
+         CUSTOMER EMAIL
+         OPTIONAL
+      ===================================================== */
+
+      const customerEmail =
+        (
+          findField(
+            form,
+            [
+              "email",
+              "customerEmail",
+              "customer_email"
+            ]
+          )?.value || ""
+        ).trim();
+
+
+      /* =====================================================
+         CUSTOMER PHONE
+      ===================================================== */
+
+      const customerPhone =
+        (
+          findField(
+            form,
+            [
+              "phone",
+              "customerPhone",
+              "customer_phone"
+            ]
+          )?.value || ""
+        ).trim();
+
+
+      /* =====================================================
+         ADDRESS
+      ===================================================== */
+
+      const address =
+        (
+          findField(
+            form,
+            [
+              "address",
+              "customer-address"
+            ]
+          )?.value || ""
+        ).trim();
+
+
+      /* =====================================================
+         NOTES
+      ===================================================== */
+
+      const notes =
+        (
+          findField(
+            form,
+            [
+              "notes",
+              "customer-notes"
+            ]
+          )?.value || ""
+        ).trim();
+
+
+      /* =====================================================
+         WILAYA
+      ===================================================== */
+
+      const wilayaCode =
+        getWilayaCode(
+          form
+        );
+
+
+      /* =====================================================
+         DELIVERY METHOD
+      ===================================================== */
+
+      const deliveryMethod =
+        getDeliveryMethod(
+          form
+        );
+
+
+      /* =====================================================
+         VALIDATE NAME
+      ===================================================== */
+
+      if (
+        !customerName ||
+        customerName.length < 2
+      ) {
+
+        alert(
+          "اكتب اسمًا صحيحًا."
+        );
+
+        return;
+      }
+
+
+      if (
+        customerName.length > 100
+      ) {
+
+        alert(
+          "الاسم طويل جدًا."
+        );
+
+        return;
+      }
+
+
+      /* =====================================================
+         VALIDATE EMAIL
+         EMPTY EMAIL IS VALID
+      ===================================================== */
+
+      const emailPattern =
+        /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+
+      if (
+        customerEmail &&
+        !emailPattern.test(
+          customerEmail
+        )
+      ) {
+
+        alert(
+          "اكتب بريدًا إلكترونيًا صحيحًا مثل example@gmail.com أو اتركه فارغًا."
+        );
+
+        return;
+      }
+
+
+      /* =====================================================
+         VALIDATE PHONE
+      ===================================================== */
+
+      const phoneNormalized =
+        customerPhone
+          .replace(
+            /\s+/g,
+            ""
+          )
+          .replace(
+            /-/g,
+            ""
+          );
+
+
+      const algeriaPhonePattern =
+        /^(0[567][0-9]{8}|\+213[567][0-9]{8})$/;
+
+
+      if (
+        !algeriaPhonePattern.test(
+          phoneNormalized
+        )
+      ) {
+
+        alert(
+          "اكتب رقم هاتف جزائري صحيح، مثل 0550123456 أو +213551234567."
+        );
+
+        return;
+      }
+
+
+      /* =====================================================
+         VALIDATE WILAYA
+      ===================================================== */
+
+      if (!wilayaCode) {
+
+        alert(
+          "اختر الولاية."
+        );
+
+        return;
+      }
+
+
+      /* =====================================================
+         VALIDATE DELIVERY
+      ===================================================== */
+
+      if (
+        deliveryMethod !== "home" &&
+        deliveryMethod !== "office"
+      ) {
+
+        alert(
+          "اختر طريقة توصيل صحيحة."
+        );
+
+        return;
+      }
+
+
+      /* =====================================================
+         VALIDATE ADDRESS FOR HOME
+      ===================================================== */
+
+      if (
+        deliveryMethod === "home" &&
+        address.length < 5
+      ) {
+
+        alert(
+          "اكتب عنوان التوصيل بشكل صحيح."
+        );
+
+        return;
+      }
+
+
+      /* =====================================================
+         BUILD ORDER ITEMS
+         IMPORTANT:
+         Current DB uses bigint product IDs.
+      ===================================================== */
+
+      const items =
+        cart
+          .map(
+            item => {
+
+              const productId =
+                Number(
+                  item.id ??
+                  item.product_id
+                );
+
+
+              const quantity =
+                Number(
+                  item.qty ??
+                  item.quantity ??
+                  1
+                );
+
+
+              return {
+                product_id:
+                  productId,
+
+                quantity:
+                  Math.max(
+                    1,
+                    Math.min(
+                      99,
+                      Number.isFinite(
+                        quantity
+                      )
+                        ? Math.floor(
+                            quantity
+                          )
+                        : 1
+                    )
+                  )
+              };
+            }
+          )
+          .filter(
+            item =>
+              Number.isInteger(
+                item.product_id
+              ) &&
+              item.product_id > 0 &&
+              Number.isInteger(
+                item.quantity
+              ) &&
+              item.quantity > 0
+          );
+
+
+      if (!items.length) {
+
+        alert(
+          "لا توجد منتجات صالحة في السلة."
+        );
+
+        return;
+      }
+
+
+      /* =====================================================
+         VERIFY PRODUCTS BEFORE RPC
+      ===================================================== */
+
+      for (
+        const item of items
+      ) {
+
+        const product =
+          PRODUCTS.find(
+            product =>
+              String(
+                product.id
+              ) ===
+              String(
+                item.product_id
+              )
+          );
+
+
+        if (!product) {
+
+          alert(
+            "أحد المنتجات في السلة لم يعد متاحًا. حدّث الصفحة."
+          );
+
+          await loadProducts();
+
+          initCart();
+
+          return;
+        }
+
+
+        if (
+          !product.is_active
+        ) {
+
+          alert(
+            `المنتج "${productName(
+              product
+            )}" لم يعد متاحًا.`
+          );
+
+          await loadProducts();
+
+          initCart();
+
+          return;
+        }
+
+
+        const stock =
+          Number(
+            product.stock ?? 0
+          );
+
+
+        if (
+          Number.isFinite(stock) &&
+          stock < item.quantity
+        ) {
+
+          alert(
+            `الكمية المطلوبة من "${productName(
+              product
+            )}" غير متوفرة.`
+          );
+
+          return;
+        }
+      }
+
+
+      /* =====================================================
+         SUBMIT BUTTON
+      ===================================================== */
+
+      const button =
+        form.querySelector(
+          'button[type="submit"]'
+        );
+
+
+      if (button) {
+
+        button.disabled =
+          true;
+
+        button.dataset.originalText =
+          button.textContent;
+
+        button.textContent =
+          "جاري إرسال الطلب...";
+      }
+
+
+      /* =====================================================
+         SEND ORDER TO SUPABASE
+      ===================================================== */
+
+      try {
+
+        const {
+          data,
+          error
+        } = await STORE_DB.rpc(
+          "place_order",
+          {
+
+            p_address:
+              deliveryMethod ===
+              "home"
+                ? address
+                : "",
+
+            p_customer_email:
+              customerEmail
+                ? customerEmail
+                : null,
+
+            p_customer_name:
+              customerName,
+
+            p_customer_phone:
+              phoneNormalized,
+
+            p_delivery_method:
+              deliveryMethod,
+
+            p_items:
+              items,
+
+            p_notes:
+              notes,
+
+            p_wilaya_code:
+              wilayaCode
+
+          }
+        );
+
+
+        /* =================================================
+           DATABASE ERROR
+        ================================================= */
+
+        if (error) {
+
+          console.error(
+            "place_order error:",
+            error
+          );
+
+          throw new Error(
+            error.message ||
+            "تعذر إنشاء الطلب."
+          );
+        }
+
+
+        /* =================================================
+           RESPONSE
+        ================================================= */
+
+        if (!data) {
+
+          throw new Error(
+            "تم الاتصال بقاعدة البيانات لكن لم يتم إنشاء الطلب."
+          );
+        }
+
+
+        const order =
+          Array.isArray(data)
+            ? data[0]
+            : data;
+
+
+        if (
+          !order ||
+          order.success !== true
+        ) {
+
+          console.error(
+            "Unexpected place_order response:",
+            data
+          );
+
+          throw new Error(
+            "لم يتم تأكيد إنشاء الطلب."
+          );
+        }
+
+
+        if (
+          !order.order_number
+        ) {
+
+          throw new Error(
+            "تم إنشاء الطلب بدون رقم طلب."
+          );
+        }
+
+
+        /* =================================================
+           SAVE LAST ORDER
+        ================================================= */
+
+        localStorage.setItem(
+          "lastOrder",
+          String(
+            order.order_number
+          )
+        );
+
+
+        localStorage.setItem(
+          "lastOrderTotal",
+          String(
+            order.total ?? 0
+          )
+        );
+
+
+        if (order.id) {
+
+          localStorage.setItem(
+            "lastOrderId",
+            String(
+              order.id
+            )
+          );
+        }
+
+
+        localStorage.setItem(
+          "atelier_noura_last_order",
+          JSON.stringify({
+            id:
+              order.id ||
+              null,
+
+            order_number:
+              order.order_number,
+
+            subtotal:
+              order.subtotal,
+
+            delivery_fee:
+              order.delivery_fee,
+
+            total:
+              order.total,
+
+            wilaya_name:
+              order.wilaya_name,
+
+            delivery_method:
+              order.delivery_method,
+
+            status:
+              order.status,
+
+            created_at:
+              new Date().toISOString()
+          })
+        );
+
+
+        /* =================================================
+           CLEAR CART ONLY AFTER SUCCESS
+        ================================================= */
+
+        localStorage.removeItem(
+          "cart"
+        );
+
+
+        updateCartCount();
+
+
+        /* =================================================
+           SUCCESS PAGE
+        ================================================= */
+
+        window.location.href =
+          "order-success.html";
+
+      }
+
+
+      /* =====================================================
+         ERROR
+      ===================================================== */
+
+      catch (error) {
+
+        console.error(
+          "Atelier Noura order error:",
+          error
+        );
+
+
+        let message =
+          error?.message ||
+          "تعذر إرسال الطلب.";
+
+
+        const lowerMessage =
+          String(
+            message
+          ).toLowerCase();
+
+
+        if (
+          lowerMessage.includes(
+            "function"
+          ) &&
+          lowerMessage.includes(
+            "does not exist"
+          )
+        ) {
+
+          message =
+            "دالة إنشاء الطلب place_order غير موجودة أو لم يتم تحديثها في Supabase.";
+        }
+
+
+        if (
+          lowerMessage.includes(
+            "schema cache"
+          )
+        ) {
+
+          message =
+            "Supabase لا يزال يستخدم نسخة قديمة من place_order. يجب تشغيل SQL الجديد في Supabase.";
+        }
+
+
+        alert(
+          message
+        );
+
+
+        if (button) {
+
+          button.disabled =
+            false;
+
+          button.textContent =
+            button.dataset
+              .originalText ||
+            "تأكيد الطلب";
+        }
+      }
+    };
+}
+
+
+/* ============================================================
+   ADDRESS TOGGLE
+============================================================ */
+
+function toggleAddress(
+  form = null
+) {
+
+  const currentForm =
+    form ||
+    document.querySelector(
+      "#checkoutForm, #checkout-form, #order-form, form[data-checkout]"
+    );
+
+
+  if (!currentForm)
+    return;
+
+
+  const method =
+    getDeliveryMethod(
+      currentForm
+    );
+
+
+  const group =
+    currentForm.querySelector(
+      "#address-group"
+    ) ||
+    document.getElementById(
+      "address-group"
+    );
+
+
+  const address =
+    findField(
+      currentForm,
+      [
+        "address",
+        "customer-address"
+      ]
+    );
+
+
+  if (!group)
+    return;
+
+
+  if (
+    method === "home"
+  ) {
+
+    group.style.display =
+      "block";
+
+
+    if (address) {
+
+      address.required =
+        true;
+    }
+
+  } else {
+
+    group.style.display =
+      "none";
+
+
+    if (address) {
+
+      address.required =
+        false;
+
+      address.value =
+        "";
+    }
+  }
+}
+
+
+/* ============================================================
+   ACCOUNT
+============================================================ */
+
+function initAccount() {
+
+  const account =
+    getAccount();
+
+
+  document
+    .querySelectorAll(
+      "#accountName"
+    )
+    .forEach(
+      element => {
+
+        element.textContent =
+          account?.email
+            ?.split("@")[0]
+            || "";
+      }
+    );
+
+
+  document
+    .querySelectorAll(
+      "#accountBtn"
+    )
+    .forEach(
+      button => {
+
+        button.addEventListener(
+          "click",
+          openAccountModal
+        );
+      }
+    );
+
+
+  document
+    .querySelectorAll(
+      "#accountLogout"
+    )
+    .forEach(
+      button => {
+
+        button.addEventListener(
+          "click",
+          () => {
+
+            localStorage.removeItem(
+              "atelierAccount"
+            );
+
+            location.reload();
+          }
+        );
+      }
+    );
+
+
+  const modal =
+    document.getElementById(
+      "accountModal"
+    );
+
+
+  if (!modal)
+    return;
+
+
+  const form =
+    document.getElementById(
+      "accountForm"
+    );
+
+
+  if (!form)
+    return;
+
+
+  const title =
+    document.getElementById(
+      "accountModalTitle"
+    );
+
+
+  const hint =
+    document.getElementById(
+      "accountHint"
+    );
+
+
+  if (account) {
+
+    if (title) {
+
+      title.textContent =
+        "حسابك";
+    }
+
+
+    if (hint) {
+
+      hint.textContent =
+        account.email;
+    }
+
+
+    const input =
+      form.querySelector(
+        "input"
+      );
+
+
+    if (input) {
+
+      input.value =
+        account.email;
+    }
+
+
+    const button =
+      form.querySelector(
+        "button"
+      );
+
+
+    if (button) {
+
+      button.textContent =
+        "تحديث البريد";
+    }
+  }
+
+
+  form.onsubmit =
+    event => {
+
+      event.preventDefault();
+
+
+      const value =
+        new FormData(
+          form
+        ).get(
+          "email"
+        );
+
+
+      const email =
+        String(
+          value || ""
+        ).trim();
+
+
+      if (!email)
+        return;
+
+
+      localStorage.setItem(
+        "atelierAccount",
+        JSON.stringify({
+          email
+        })
+      );
+
+
+      modal.classList
+        .remove(
+          "open"
+        );
+
+
+      location.reload();
+    };
+
+
+  modal
+    .querySelectorAll(
+      "[data-close-account]"
+    )
+    .forEach(
+      button => {
+
+        button.addEventListener(
+          "click",
+          () =>
+            modal.classList
+              .remove(
+                "open"
+              )
+        );
+      }
+    );
+}
+
+
+function openAccountModal() {
+
+  document
+    .getElementById(
+      "accountModal"
+    )
+    ?.classList
+    .add(
+      "open"
+    );
+}
+
+
+/* ============================================================
+   REALTIME
+============================================================ */
+
+function subscribeStoreRealtime() {
+
+  if (!STORE_DB)
+    return;
+
+
+  if (realtimeStoreChannel) {
+
+    STORE_DB.removeChannel(
+      realtimeStoreChannel
+    );
+  }
+
+
+  realtimeStoreChannel =
+    STORE_DB
+      .channel(
+        "atelier-noura-store"
+      )
+
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "products"
+        },
+        async () => {
+
+          try {
+
+            await loadProducts();
+
+            refreshVisiblePage();
+
+          } catch (error) {
+
+            console.error(
+              "Products realtime error:",
+              error
+            );
+          }
+        }
+      )
+
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "product_images"
+        },
+        async () => {
+
+          try {
+
+            await loadProducts();
+
+            refreshVisiblePage();
+
+          } catch (error) {
+
+            console.error(
+              "Product media realtime error:",
+              error
+            );
+          }
+        }
+      )
+
+      .subscribe();
+}
+
+
+function refreshVisiblePage() {
+
+  if (
+    document.getElementById(
+      "newArrivalsGrid"
+    )
+  ) {
+
+    initHome();
+  }
+
+
+  if (
+    document.getElementById(
+      "productsGrid"
+    )
+  ) {
+
+    initProductsPage();
+  }
+
+
+  if (
+    document.getElementById(
+      "productDetail"
+    )
+  ) {
+
+    initDetail();
+  }
+
+
+  if (
+    document.getElementById(
+      "cartView"
+    )
+  ) {
+
+    initCart();
+  }
+}
+
+
+/* ============================================================
+   BOOT
+============================================================ */
+
+async function bootStore() {
+
+  updateCartCount();
+
+
+  try {
+
+    await initStoreSupabase();
+
+
+    await loadProducts();
+
+
+    await loadDeliveryZones();
+
+
+    initHome();
+
+
+    initProductsPage();
+
+
+    initDetail();
+
+
+    initCart();
+
+
+    await initCheckout();
+
+
+    initAccount();
+
+
+    subscribeStoreRealtime();
+
+
+  } catch (error) {
+
+    console.error(
+      "Atelier Noura:",
+      error
+    );
+
+
+    initAccount();
+
+
+    const grids =
+      document.querySelectorAll(
+        "#featuredGrid,#productsGrid"
+      );
+
+
+    grids.forEach(
+      grid => {
+
+        grid.innerHTML = `
+          <div
+            class="empty"
+            style="
+              grid-column:1/-1;
+            "
+          >
+            تعذر تحميل المنتجات
+            حاليًا. حاول تحديث الصفحة.
+          </div>
+        `;
+      }
+    );
+  }
+
+
+  document
+    .getElementById(
+      "menuBtn"
+    )
+    ?.addEventListener(
+      "click",
+      () =>
+        document
+          .querySelector(
+            ".nav"
+          )
+          ?.classList
+          .toggle(
+            "show"
+          )
+    );
+}
+
+
+document.addEventListener(
+  "DOMContentLoaded",
+  bootStore
+);
