@@ -193,3 +193,160 @@ footer h4{color:var(--gold);margin:0 0 8px;font-weight:500}footer b{font-size:20
   .summary-card,.form-card{padding:22px;border-radius:26px}
 }
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.reveal,.rv{opacity:1;transform:none}.hero-curve path{stroke-dashoffset:0}}
+
+/* =========================================================
+   ANOXARA — STORY LOGO
+   High-resolution luxury logo presentation
+   ========================================================= */
+
+.story-art {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 520px;
+  border-radius: 30px;
+}
+
+/*
+   The original logo has a deep black background.
+   Screen blending makes the black background visually disappear
+   while preserving the luminous gold logo.
+*/
+.story-logo-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 520px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  overflow: hidden;
+  border-radius: inherit;
+}
+
+.story-logo {
+  display: block;
+
+  width: min(88%, 560px);
+  height: auto;
+
+  max-width: 100%;
+  object-fit: contain;
+
+  /*
+    Keeps the original image quality.
+    No artificial low-resolution background image.
+  */
+  image-rendering: auto;
+
+  /*
+    Removes the visual black background without editing
+    or compressing the original logo file.
+  */
+  mix-blend-mode: screen;
+
+  transform: translateZ(0);
+
+  transition:
+    transform 700ms cubic-bezier(.2,.7,.2,1),
+    filter 700ms ease;
+}
+
+/* Elegant interaction */
+.story-art:hover .story-logo {
+  transform: scale(1.025) translateZ(0);
+  filter: brightness(1.04) saturate(1.04);
+}
+
+/* Very subtle decorative glow */
+.story-logo-frame::before {
+  content: "";
+  position: absolute;
+
+  width: 55%;
+  aspect-ratio: 1;
+
+  border-radius: 50%;
+
+  background:
+    radial-gradient(
+      circle,
+      rgba(190, 145, 72, .13) 0%,
+      rgba(190, 145, 72, .06) 35%,
+      transparent 70%
+    );
+
+  filter: blur(18px);
+
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Small luxury corner detail */
+.story-logo-frame::after {
+  content: "";
+  position: absolute;
+
+  width: 110px;
+  height: 110px;
+
+  border-top: 1px solid rgba(157, 116, 55, .28);
+  border-right: 1px solid rgba(157, 116, 55, .28);
+
+  top: 28px;
+  right: 28px;
+
+  border-top-right-radius: 22px;
+
+  pointer-events: none;
+}
+
+
+/* =========================================================
+   MOBILE
+   ========================================================= */
+
+@media (max-width: 768px) {
+
+  .story-art {
+    min-height: 390px;
+    border-radius: 24px;
+  }
+
+  .story-logo-frame {
+    min-height: 390px;
+  }
+
+  .story-logo {
+    width: 92%;
+  }
+
+  .story-logo-frame::after {
+    width: 75px;
+    height: 75px;
+
+    top: 18px;
+    right: 18px;
+  }
+}
+
+
+/* =========================================================
+   REDUCED MOTION
+   ========================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+
+  .story-logo {
+    transition: none;
+  }
+
+  .story-art:hover .story-logo {
+    transform: none;
+  }
+}
