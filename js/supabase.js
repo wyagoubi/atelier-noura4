@@ -1,4 +1,4 @@
-/* Atelier Noura - Supabase browser configuration */
+/* Anoxara  - Supabase browser configuration */
 window.SUPABASE_CONFIG = {
   url: "https://rjhdfzwsmsijpwfqglxn.supabase.co",
   anonKey: "sb_publishable_Xlg_hV8utl8IXbkWWW_eMw_jW7Nmmmz"
