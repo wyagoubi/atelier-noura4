@@ -1,4 +1,4 @@
-/* ATELIER NOURA — Customer boutique design (ivory / champagne / charcoal). Loads after style.css */
+/* Anoxara  — Customer boutique design (ivory / champagne / charcoal). Loads after style.css */
 :root{--bg:#F7F2EA;--bg2:#EFE7DA;--card:#FBF8F2;--beige:#E8DED0;--bd:#D9CBB9;--ink:#171613;--ink2:#70695F;--mute:#91897D;--gold:#C7A15B;--gold2:#9C773D;--cream:#F7F2EA;--paper:#FBF8F2;--muted:#70695F;--line:rgba(156,119,61,.22);--shadow:0 30px 70px -28px rgba(92,70,40,.28);--shadow-s:0 12px 34px -16px rgba(92,70,40,.22);--ease:.4s cubic-bezier(.22,.7,.2,1);--r1:32px;--r2:26px;--r3:16px}
 html.dark{--bg:#151311;--bg2:#1b1815;--card:#29231D;--beige:#211D18;--bd:rgba(201,163,93,.22);--ink:#F5EFE5;--ink2:#B8AA96;--mute:#8d806e;--gold:#C9A35D;--cream:#151311;--paper:#29231D;--muted:#B8AA96;--line:rgba(201,163,93,.2);--shadow:0 30px 70px -28px rgba(0,0,0,.65);--shadow-s:0 12px 34px -16px rgba(0,0,0,.6)}
 html{scroll-behavior:smooth}
