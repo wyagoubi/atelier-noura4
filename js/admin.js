@@ -1,4 +1,4 @@
-/* Atelier Noura — Owner Studio
+/* Anoxara  — Owner Studio
    Visual dashboard layer + existing owner authentication.
    No database schema or order RPC is changed here. */
 
@@ -47,7 +47,7 @@ async function ownerLogin(event){
     const {error}=await OWNER_DB.auth.signInWithPassword({email,password});
     if(error)throw error;
     const owner=await ensureOwner();
-    if(!owner){await OWNER_DB.auth.signOut();throw new Error("هذا الحساب ليس حساب مالك Atelier Noura.")}
+    if(!owner){await OWNER_DB.auth.signOut();throw new Error("هذا الحساب ليس حساب مالك Anoxara .")}
     setLoginMessage("");
     await showDashboard(owner);
   }catch(error){
