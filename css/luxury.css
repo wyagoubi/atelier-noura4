@@ -250,7 +250,7 @@ footer h4{color:var(--gold);margin:0 0 8px;font-weight:500}footer b{font-size:20
 
   image-rendering: auto;
 
-  mix-blend-mode: screen;
+  mix-blend-mode:  multiply;
 
   transform: translateZ(0);
 
