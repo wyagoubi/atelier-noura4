@@ -1,4 +1,4 @@
-/* Atelier Noura — Owner Studio (Supabase: products, product_images, categories, orders, delivery_zones) */
+/* Anoxara  — Owner Studio (Supabase: products, product_images, categories, orders, delivery_zones) */
 const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const STATUS={new:"جديد",confirmed:"مؤكد",preparing:"قيد التحضير",shipped:"تم الشحن",delivered:"تم التسليم",cancelled:"ملغى"};
 const NEXT={new:["confirmed","تأكيد الطلب"],confirmed:["preparing","بدء التحضير"],preparing:["shipped","تم الشحن"],shipped:["delivered","تم التسليم"]};
@@ -73,7 +73,7 @@ async function tabOverview(root){
   const {count}=await OWNER_DB.from("products").select("id",{count:"exact",head:true}).eq("is_active",true);
   const sales=dailySeries(o,"sum"),cnt=dailySeries(o,"count");
   const kpi=(ic,l,v,sub,sp="")=>`<div class="kpi"><div class="k-top"><span>${l}</span>${IC(ICONS[ic])}</div><b>${v}</b><small>${sub}</small>${sp}</div>`;
-  root.innerHTML=head("ATELIER NOURA · OWNER STUDIO","مرحبًا بك، مالك المتجر","نظرة على أداء متجرك. كل الأرقام حقيقية من الطلبات المسجلة.")
+  root.innerHTML=head("Anoxara  · OWNER STUDIO","مرحبًا بك، مالك المتجر","نظرة على أداء متجرك. كل الأرقام حقيقية من الطلبات المسجلة.")
   +`<div class="kpis">${kpi("sales","إجمالي المبيعات",money(sum),valid.length+" طلب",sparkline(sales))}${kpi("orders","عدد الطلبات",o.length,n+" طلب جديد",sparkline(cnt))}${kpi("avg","متوسط قيمة الطلب",money(valid.length?sum/valid.length:0),"من الطلبات غير الملغاة")}${kpi("prod","المنتجات النشطة",count||0,"ظاهرة في المتجر")}</div>`
   +`<div class="grid2"><section class="panel"><h3>المبيعات خلال آخر 7 أيام</h3>${salesChart(sales)}</section><section class="panel"><h3>حالة الطلبات</h3>${donut(o)}</section></div>`
   +`<section class="panel"><h3>آخر الطلبات</h3>${o.length?`<div class="table-scroll"><table class="dtable"><thead><tr><th>الطلب</th><th>الزبون</th><th>الولاية</th><th>الإجمالي</th><th>الحالة</th><th>التاريخ</th></tr></thead><tbody>${o.slice(0,6).map(x=>`<tr><td><span class="order-pill">${x.order_number}</span></td><td>${esc(x.customer_name)}</td><td>${esc(x.wilaya_name)}</td><td>${money(x.total)}</td><td><span class="badge b-${x.status}">${STATUS[x.status]||x.status}</span></td><td>${new Date(x.created_at).toLocaleDateString("fr-DZ")}</td></tr>`).join("")}</tbody></table></div>`:'<div class="empty-state">لا توجد طلبات بعد.</div>'}</section>`;
