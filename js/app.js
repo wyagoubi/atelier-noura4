@@ -28,7 +28,7 @@ function productVisual(p,extraClass=""){
   const src=images[p.id];
   return src
     ? `<div class="product-image ${extraClass}"><img src="${src}" alt="${p.name}" loading="lazy"><span class="product-number"></span></div>`
-    : `<div class="product-image ${extraClass} product-placeholder"><span class="product-number"></span><div><small>ATELIER NOURA</small><strong>${p.name}</strong></div></div>`;
+    : `<div class="product-image ${extraClass} product-placeholder"><span class="product-number"></span><div><small>Anoxara </small><strong>${p.name}</strong></div></div>`;
 }
 
 function productCard(p){
@@ -149,7 +149,7 @@ function initAccount(){
 
       if(profile?.role!=="owner"){
         await d.auth.signOut();
-        throw new Error("هذا الحساب ليس حساب مالك Atelier Noura.");
+        throw new Error("هذا الحساب ليس حساب مالك Anoxara .");
       }
 
       if(accountName)accountName.textContent=email.split("@")[0];
@@ -184,7 +184,7 @@ function initDetail(){
   const el=document.getElementById("productDetail");if(!el)return;
   const p=PRODUCTS.find(x=>x.id==new URLSearchParams(location.search).get("id"))||PRODUCTS[0];
   const images=getProductImages();
-  const visual=images[p.id]?`<div class="detail-image has-image"><img src="${images[p.id]}" alt="${p.name}"></div>`:`<div class="detail-image product-placeholder"><div><small>ATELIER NOURA</small><strong>NO.</strong></div></div>`;
+  const visual=images[p.id]?`<div class="detail-image has-image"><img src="${images[p.id]}" alt="${p.name}"></div>`:`<div class="detail-image product-placeholder"><div><small>Anoxara </small><strong>NO.</strong></div></div>`;
   el.innerHTML=`<div class="product-detail"><div>${visual}</div><div class="detail-info"><p class="eyebrow">${CAT_AR[p.category]||p.category}</p><h1>${p.name}</h1><div class="price">${money(p.price)}</div><p class="description">${p.desc}<br><br>قطعة مصنوعة بعناية، وقد تختلف التفاصيل قليلًا لأن كل قطعة لها طابعها الخاص.</p><div class="qty"><button id="minus">−</button><b id="qty">1</b><button id="plus">+</button></div><button class="btn btn-dark" id="buy">أضيفي إلى الحقيبة</button></div></div>`;
   let q=1;const qel=document.getElementById("qty");
   document.getElementById("plus").onclick=()=>{q++;qel.textContent=q};
@@ -195,7 +195,7 @@ function initDetail(){
 function initCart(){
   const el=document.getElementById("cartView");if(!el)return;
   const c=getCart();
-  if(!c.length){el.innerHTML='<div class="empty"><h2>حقيبتك فارغة</h2><p>اكتشفي قطع Atelier Noura.</p><a class="btn btn-dark" href="products.html">المتجر</a></div>';return}
+  if(!c.length){el.innerHTML='<div class="empty"><h2>حقيبتك فارغة</h2><p>اكتشفي قطع Anoxara .</p><a class="btn btn-dark" href="products.html">المتجر</a></div>';return}
   let total=0;
   const rows=c.map(x=>{const p=PRODUCTS.find(z=>z.id==x.id);total+=p.price*x.qty;return `<div class="cart-item"><div class="cart-thumb">${getProductImages()[p.id]?`<img src="${getProductImages()[p.id]}" alt="${p.name}">`:""}</div><div><h3>${p.name}</h3><p>${x.qty} × ${money(p.price)}</p></div><div><b>${money(p.price*x.qty)}</b><button class="remove" onclick="removeCart('${p.id}')">حذف</button></div></div>`}).join("");
   el.innerHTML=`<div class="cart-layout"><div>${rows}</div><aside class="summary-card"><h2>ملخص الطلب</h2><div class="summary-row"><span>المنتجات</span><b>${money(total)}</b></div><div class="summary-row"><span>التوصيل</span><span>يحسب حسب الولاية</span></div><div class="summary-row summary-total"><span>الإجمالي</span><b>${money(total)}</b></div><a class="btn btn-dark full" href="checkout.html">متابعة الطلب</a></aside></div>`;
@@ -230,7 +230,7 @@ function initDetail(){
   const p=PRODUCTS.find(x=>x.id==new URLSearchParams(location.search).get("id"));
   if(!p){el.innerHTML='<div class="empty"><h2>المنتج غير متوفر</h2><a class="btn btn-dark" href="products.html">المتجر</a></div>';return}
   const m=MEDIA[p.id]||[];
-  const show=x=>x?(x.type==="video"?`<video src="${x.url}" controls playsinline></video>`:`<img src="${x.url}" alt="${p.name}">`):`<div class="product-placeholder"><div><small>ATELIER NOURA</small><strong>${p.name}</strong></div></div>`;
+  const show=x=>x?(x.type==="video"?`<video src="${x.url}" controls playsinline></video>`:`<img src="${x.url}" alt="${p.name}">`):`<div class="product-placeholder"><div><small>Anoxara </small><strong>${p.name}</strong></div></div>`;
   const out=p.stock<=0;
   el.innerHTML=`<div class="product-detail"><div class="gallery"><div class="detail-image has-image" id="mainMedia">${show(m[0])}</div>${m.length>1?`<div class="thumbs">${m.map((x,i)=>`<button type="button" class="thumb${i?"":" on"}" data-i="${i}">${x.type==="video"?"▶":`<img src="${x.url}" alt="">`}</button>`).join("")}</div>`:""}</div><div class="detail-info"><p class="eyebrow">${CAT_AR[p.category]||p.category}</p><h1>${p.name}</h1><div class="price">${money(p.price)}${p.oldPrice?` <s>${money(p.oldPrice)}</s>`:""}</div><p class="stock ${out?"no":"ok"}">${out?"نفدت الكمية":"متوفر"}</p><p class="description">${p.desc}</p><div class="qty"><button id="minus">−</button><b id="qty">1</b><button id="plus">+</button></div><button class="btn btn-dark" id="buy" ${out?"disabled":""}>أضيفي إلى الحقيبة</button></div></div>`;
   el.querySelectorAll(".thumb").forEach(b=>b.onclick=()=>{document.getElementById("mainMedia").innerHTML=show(m[b.dataset.i]);el.querySelectorAll(".thumb").forEach(x=>x.classList.toggle("on",x===b))});
